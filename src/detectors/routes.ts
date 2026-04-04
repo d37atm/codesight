@@ -1,5 +1,7 @@
 import { relative, basename } from "node:path";
 import { readFileSafe } from "../scanner.js";
+import { loadTypeScript } from "../ast/loader.js";
+import { extractRoutesAST } from "../ast/extract-routes.js";
 import type { RouteInfo, Framework, ProjectInfo } from "../types.js";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"];
@@ -191,12 +193,25 @@ async function detectHonoRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js|tsx|jsx|mjs)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("hono") && !content.includes("Hono")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
+
+    // Try AST first
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "hono", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
+    // Regex fallback
     const routePattern =
       /\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -207,8 +222,9 @@ async function detectHonoRoutes(
         method: match[1].toUpperCase(),
         path,
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "hono",
+        confidence: "regex",
       });
     }
   }
@@ -223,12 +239,25 @@ async function detectExpressRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js|mjs|cjs)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("express") && !content.includes("Router")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
+
+    // Try AST first
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "express", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
+    // Regex fallback
     const routePattern =
       /(?:app|router|server)\s*\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -237,8 +266,9 @@ async function detectExpressRoutes(
         method: match[1].toUpperCase(),
         path: match[2],
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "express",
+        confidence: "regex",
       });
     }
   }
@@ -253,12 +283,25 @@ async function detectFastifyRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js|mjs|cjs)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("fastify")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
+
+    // Try AST first
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "fastify", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
+    // Regex fallback
     const routePattern =
       /(?:fastify|server|app)\s*\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -267,8 +310,9 @@ async function detectFastifyRoutes(
         method: match[1].toUpperCase(),
         path: match[2],
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "fastify",
+        confidence: "regex",
       });
     }
 
@@ -280,8 +324,9 @@ async function detectFastifyRoutes(
         method: match[1].toUpperCase(),
         path: match[2],
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "fastify",
+        confidence: "regex",
       });
     }
   }
@@ -296,12 +341,23 @@ async function detectKoaRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js|mjs|cjs)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("koa") && !content.includes("Router")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
+
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "koa", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
     const routePattern =
       /router\s*\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -310,8 +366,9 @@ async function detectKoaRoutes(
         method: match[1].toUpperCase(),
         path: match[2],
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "koa",
+        confidence: "regex",
       });
     }
   }
@@ -326,18 +383,28 @@ async function detectNestJSRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("@Controller") && !content.includes("@Get") && !content.includes("@Post")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
 
-    // Extract controller base path: @Controller('users') or @Controller('/users')
+    // Try AST — NestJS benefits most from AST (decorator + controller prefix combining)
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "nestjs", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
+    // Regex fallback
     const controllerMatch = content.match(/@Controller\s*\(\s*['"`]([^'"`]*)['"`]\s*\)/);
     const basePath = controllerMatch ? "/" + controllerMatch[1].replace(/^\//, "") : "";
 
-    // Match method decorators: @Get(), @Post('/create'), @Put(':id'), etc.
     const decoratorPattern = /@(Get|Post|Put|Patch|Delete|Options|Head|All)\s*\(\s*(?:['"`]([^'"`]*)['"`])?\s*\)/gi;
     let match;
     while ((match = decoratorPattern.exec(content)) !== null) {
@@ -348,8 +415,9 @@ async function detectNestJSRoutes(
         method,
         path: fullPath,
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "nestjs",
+        confidence: "regex",
       });
     }
   }
@@ -364,12 +432,23 @@ async function detectElysiaRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js|mjs)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("elysia") && !content.includes("Elysia")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
+
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "elysia", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
     const routePattern = /\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
     while ((match = routePattern.exec(content)) !== null) {
@@ -379,8 +458,9 @@ async function detectElysiaRoutes(
         method: match[1].toUpperCase(),
         path,
         file: rel,
-        tags: detectTags(content),
+        tags,
         framework: "elysia",
+        confidence: "regex",
       });
     }
   }
@@ -426,6 +506,7 @@ async function detectTRPCRoutes(
 ): Promise<RouteInfo[]> {
   const tsFiles = files.filter((f) => f.match(/\.(ts|js)$/));
   const routes: RouteInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of tsFiles) {
     const content = await readFileSafe(file);
@@ -433,12 +514,18 @@ async function detectTRPCRoutes(
     if (!content.includes("trpc") && !content.includes("TRPC") && !content.includes("createTRPCRouter") && !content.includes("publicProcedure") && !content.includes("protectedProcedure")) continue;
 
     const rel = relative(project.root, file);
+    const tags = detectTags(content);
 
-    // Match tRPC procedure definitions like:
-    //   list: publicProcedure.query(...)
-    //   create: publicProcedure.input(schema).mutation(...)
-    //   getById: t.procedure.input(z.object({...})).query(...)
-    // Strategy: find lines with "query(" or "mutation(" and extract the procedure name
+    // AST handles tRPC much better — properly parses router nesting and procedure chains
+    if (ts) {
+      const astRoutes = extractRoutesAST(ts, rel, content, "trpc", tags);
+      if (astRoutes.length > 0) {
+        routes.push(...astRoutes);
+        continue;
+      }
+    }
+
+    // Regex fallback
     const lines = content.split("\n");
     for (const line of lines) {
       const queryMatch = line.match(/^\s*(\w+)\s*:\s*.*\.(query)\s*\(/);
@@ -452,8 +539,9 @@ async function detectTRPCRoutes(
             method: isQuery ? "QUERY" : "MUTATION",
             path: procName,
             file: rel,
-            tags: detectTags(content),
+            tags,
             framework: "trpc",
+            confidence: "regex",
           });
         }
       }

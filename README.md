@@ -2,7 +2,7 @@
 
 ### Your AI assistant wastes thousands of tokens every conversation just figuring out your project. codesight fixes that in one command.
 
-**Zero dependencies. 25+ framework detectors. 8 ORM parsers. 8 MCP tools. Blast radius analysis. One `npx` call.**
+**Zero dependencies. AST precision. 25+ framework detectors. 8 ORM parsers. 8 MCP tools. Blast radius analysis. One `npx` call.**
 
 [![npm version](https://img.shields.io/npm/v/codesight?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/codesight)
 [![npm downloads](https://img.shields.io/npm/dm/codesight?style=for-the-badge&logo=npm&color=blue&label=Monthly%20Downloads)](https://www.npmjs.com/package/codesight)
@@ -56,6 +56,8 @@ Every AI coding conversation starts the same way. Your assistant reads files, gr
 
 codesight scans your codebase once and generates a structured context map. Routes, database schema, components, dependencies, environment variables, middleware, all condensed into ~3,000 to 5,000 tokens of structured markdown. Your AI reads one file and knows the entire project.
 
+**v1.3.0: AST-level precision.** When TypeScript is available in your project, codesight uses the TypeScript compiler API for structural parsing instead of regex. This gives exact route paths, proper controller prefix combining (NestJS), accurate tRPC procedure nesting, precise Drizzle field types, and React prop extraction from type annotations. Zero new dependencies — borrows TypeScript from your project's node_modules. Falls back to regex when TypeScript is not available.
+
 ```
 Output size:      ~3,200 tokens
 Exploration cost: ~52,000 tokens (without codesight)
@@ -76,6 +78,27 @@ Saved:            ~48,800 tokens per conversation
   graph.md         Which files import what and which break the most things if changed
   report.html      Interactive visual dashboard (with --html or --open)
 ```
+
+## AST Precision
+
+When TypeScript is installed in the project being scanned, codesight uses the actual TypeScript compiler API to parse your code structurally. No regex guessing.
+
+| What AST enables | Regex alone |
+|---|---|
+| Follows `router.use('/prefix', subRouter)` chains | Misses nested routers |
+| Combines `@Controller('users')` + `@Get(':id')` into `/users/:id` | May miss prefix |
+| Parses `router({ users: userRouter })` tRPC nesting | Line-by-line matching |
+| Extracts exact Drizzle field types from `.primaryKey().notNull()` chains | Pattern matching |
+| Gets React props from TypeScript interfaces and destructuring | Regex on `{ prop }` |
+| Detects middleware in route chains: `app.get('/path', auth, handler)` | Not captured |
+
+AST detection is indicated in the output:
+
+```
+Analyzing... done (AST: 65 routes, 18 models, 16 components)
+```
+
+No configuration needed. If TypeScript is in your `node_modules`, AST kicks in automatically. Works with npm, yarn, and pnpm (including strict mode). Falls back to regex for non-TypeScript projects or frameworks without AST support.
 
 ## Routes
 
@@ -332,6 +355,7 @@ Most AI context tools dump your entire codebase into one file. codesight takes a
 
 | | codesight | File concatenation tools | AST-based tools |
 |---|---|---|---|
+| **Parsing** | AST when available, regex fallback | None | Tree-sitter / custom |
 | **Output** | Structured routes, schema, components, deps | Raw file contents | Call graphs, class diagrams |
 | **Token cost** | ~3,000-5,000 tokens | 50,000-500,000+ tokens | Varies |
 | **Route detection** | 25+ frameworks auto-detected | None | Limited |
@@ -340,7 +364,7 @@ Most AI context tools dump your entire codebase into one file. codesight takes a
 | **AI tool profiles** | 5 tools (Claude, Cursor, Codex, Copilot, Windsurf) | None | None |
 | **MCP server** | 8 specialized tools with session caching | None | Some |
 | **Setup** | `npx codesight` (zero deps, zero config) | Copy/paste | Install compilers, runtimes |
-| **Dependencies** | Zero | Varies | Tree-sitter, SQLite, etc. |
+| **Dependencies** | Zero (borrows TS from your project) | Varies | Tree-sitter, SQLite, etc. |
 
 ## Contributing
 

@@ -17,7 +17,7 @@ import { generateAIConfigs } from "./generators/ai-config.js";
 import { generateHtmlReport } from "./generators/html-report.js";
 import type { ScanResult } from "./types.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const BRAND = "codesight";
 
 function printHelp() {
@@ -103,7 +103,16 @@ async function scan(root: string, outputDirName: string, maxDepth: number): Prom
   // Step 4: Enrich routes with contract info
   const routes = await enrichRouteContracts(rawRoutes, project);
 
-  console.log(" done");
+  // Report AST vs regex detection
+  const astRoutes = routes.filter((r) => r.confidence === "ast").length;
+  const astSchemas = schemas.filter((s) => s.confidence === "ast").length;
+  const astComponents = components.filter((c) => c.confidence === "ast").length;
+  const totalAST = astRoutes + astSchemas + astComponents;
+  if (totalAST > 0) {
+    console.log(` done (AST: ${astRoutes} routes, ${astSchemas} models, ${astComponents} components)`);
+  } else {
+    console.log(" done");
+  }
 
   // Step 5: Write output
   process.stdout.write("  Writing output...");

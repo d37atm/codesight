@@ -1,5 +1,7 @@
 import { relative, basename, extname } from "node:path";
 import { readFileSafe } from "../scanner.js";
+import { loadTypeScript } from "../ast/loader.js";
+import { extractReactComponentsAST } from "../ast/extract-components.js";
 import type { ComponentInfo, ProjectInfo } from "../types.js";
 
 // shadcn/ui + radix primitives to filter out
@@ -101,6 +103,7 @@ async function detectReactComponents(
   );
 
   const components: ComponentInfo[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of componentFiles) {
     if (isUIPrimitive(file)) continue;
@@ -109,6 +112,15 @@ async function detectReactComponents(
     if (!content) continue;
 
     const rel = relative(project.root, file);
+
+    // Try AST first — extracts prop types, handles forwardRef/memo
+    if (ts) {
+      const astComponents = extractReactComponentsAST(ts, file, content, rel);
+      if (astComponents.length > 0) {
+        components.push(...astComponents);
+        continue;
+      }
+    }
 
     // Detect component name from export
     let name = "";

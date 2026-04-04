@@ -50,6 +50,8 @@ export interface WorkspaceInfo {
   orms: ORM[];
 }
 
+export type DetectionMethod = "ast" | "regex";
+
 export interface RouteInfo {
   method: string;
   path: string;
@@ -59,6 +61,8 @@ export interface RouteInfo {
   requestType?: string;
   responseType?: string;
   params?: string[];
+  confidence?: DetectionMethod;
+  middleware?: string[];
 }
 
 export interface SchemaModel {
@@ -66,6 +70,7 @@ export interface SchemaModel {
   fields: SchemaField[];
   relations: string[];
   orm: ORM;
+  confidence?: DetectionMethod;
 }
 
 export interface SchemaField {
@@ -77,6 +82,7 @@ export interface SchemaField {
 export interface ComponentInfo {
   name: string;
   file: string;
+  confidence?: DetectionMethod;
   props: string[];
   isClient: boolean;
   isServer: boolean;

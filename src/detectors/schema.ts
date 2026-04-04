@@ -1,5 +1,7 @@
 import { join } from "node:path";
 import { readFileSafe } from "../scanner.js";
+import { loadTypeScript } from "../ast/loader.js";
+import { extractDrizzleSchemaAST, extractTypeORMSchemaAST } from "../ast/extract-schema.js";
 import type { SchemaModel, SchemaField, ProjectInfo } from "../types.js";
 
 const AUDIT_FIELDS = new Set([
@@ -51,10 +53,20 @@ async function detectDrizzleSchemas(
   );
 
   const models: SchemaModel[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of schemaFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("pgTable") && !content.includes("mysqlTable") && !content.includes("sqliteTable")) continue;
+
+    // Try AST first — much more accurate for Drizzle field chains
+    if (ts) {
+      const astModels = extractDrizzleSchemaAST(ts, file, content);
+      if (astModels.length > 0) {
+        models.push(...astModels);
+        continue;
+      }
+    }
 
     // Match: export const users = pgTable("users", { ... })
     const tablePattern =
@@ -219,10 +231,20 @@ async function detectTypeORMSchemas(
     (f) => f.match(/\.entity\.(ts|js)$/) || f.match(/entities\/.*\.(ts|js)$/)
   );
   const models: SchemaModel[] = [];
+  const ts = loadTypeScript(project.root);
 
   for (const file of entityFiles) {
     const content = await readFileSafe(file);
     if (!content.includes("@Entity") && !content.includes("@Column")) continue;
+
+    // Try AST first — handles TypeORM decorators accurately
+    if (ts) {
+      const astModels = extractTypeORMSchemaAST(ts, file, content);
+      if (astModels.length > 0) {
+        models.push(...astModels);
+        continue;
+      }
+    }
 
     // Extract entity name
     const entityMatch = content.match(/@Entity\s*\(\s*(?:['"`](\w+)['"`])?\s*\)/);
