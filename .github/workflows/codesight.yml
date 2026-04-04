@@ -1,0 +1,19 @@
+name: codesight
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx codesight
+      - name: Upload context map
+        uses: actions/upload-artifact@v4
+        with:
+          name: codesight
+          path: .codesight/

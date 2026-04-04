@@ -43,9 +43,16 @@ export async function enrichRouteContracts(
       case "express":
       case "fastify":
       case "koa":
+      case "nestjs":
+      case "elysia":
+      case "adonis":
+      case "raw-http":
         enrichTSRoute(route, content);
         break;
       case "next-app":
+      case "sveltekit":
+      case "remix":
+      case "nuxt":
         enrichNextRoute(route, content);
         break;
       case "fastapi":

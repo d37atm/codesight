@@ -10,8 +10,17 @@ export async function detectDependencyGraph(
   const importCount = new Map<string, number>();
 
   const codeFiles = files.filter((f) =>
-    f.match(/\.(ts|tsx|js|jsx|mjs|py|go)$/)
+    f.match(/\.(ts|tsx|js|jsx|mjs|py|go|rb|ex|exs|java|kt|rs|php)$/)
   );
+
+  // Build a lookup map for faster resolution: relative path -> true
+  const relPathSet = new Set<string>();
+  const relPaths: string[] = [];
+  for (const file of files) {
+    const rel = relative(project.root, file);
+    relPathSet.add(rel);
+    relPaths.push(rel);
+  }
 
   for (const file of codeFiles) {
     const content = await readFileSafe(file);
@@ -24,8 +33,16 @@ export async function detectDependencyGraph(
       extractPythonImports(content, rel, edges, importCount);
     } else if (ext === ".go") {
       extractGoImports(content, rel, edges, importCount);
+    } else if (ext === ".rb") {
+      extractRubyImports(content, rel, edges, importCount);
+    } else if (ext === ".ex" || ext === ".exs") {
+      extractElixirImports(content, rel, edges, importCount);
+    } else if (ext === ".java" || ext === ".kt") {
+      extractJavaImports(content, rel, edges, importCount, relPaths);
+    } else if (ext === ".rs") {
+      extractRustImports(content, rel, edges, importCount);
     } else {
-      extractTSImports(content, rel, file, project, files, edges, importCount);
+      extractTSImports(content, rel, file, project, relPathSet, edges, importCount);
     }
   }
 
@@ -43,7 +60,7 @@ function extractTSImports(
   rel: string,
   absPath: string,
   project: ProjectInfo,
-  allFiles: string[],
+  relPathSet: Set<string>,
   edges: ImportEdge[],
   importCount: Map<string, number>
 ) {
@@ -55,7 +72,7 @@ function extractTSImports(
   ];
 
   for (const pattern of patterns) {
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = pattern.exec(content)) !== null) {
       const importPath = match[1];
 
@@ -71,8 +88,11 @@ function extractTSImports(
         resolvedPath = relative(project.root, resolve(dir, importPath));
       }
 
-      // Strip extension and try to find the actual file
-      const normalized = normalizeImportPath(resolvedPath, allFiles, project.root);
+      // Strip .js/.mjs extension that TypeScript adds for ESM compatibility
+      // e.g., import { foo } from "./bar.js" actually refers to ./bar.ts
+      const stripped = resolvedPath.replace(/\.(js|mjs|cjs)$/, "");
+
+      const normalized = normalizeImportPath(stripped, relPathSet);
       if (normalized && normalized !== rel) {
         edges.push({ from: rel, to: normalized });
         importCount.set(normalized, (importCount.get(normalized) || 0) + 1);
@@ -89,7 +109,7 @@ function extractPythonImports(
 ) {
   // from .module import something or from ..package.module import something
   const fromPattern = /^from\s+(\.+\w[\w.]*)\s+import/gm;
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = fromPattern.exec(content)) !== null) {
     const target = match[1].replace(/\./g, "/") + ".py";
     edges.push({ from: rel, to: target });
@@ -103,11 +123,9 @@ function extractGoImports(
   edges: ImportEdge[],
   importCount: Map<string, number>
 ) {
-  // Go doesn't have relative imports in the same way, but we can track internal package imports
   const importBlock = content.match(/import\s*\(([\s\S]*?)\)/);
   if (!importBlock) return;
 
-  // Look for internal package paths (not standard library)
   const lines = importBlock[1].split("\n");
   for (const line of lines) {
     const pathMatch = line.match(/["']([^"']+)["']/);
@@ -119,32 +137,101 @@ function extractGoImports(
   }
 }
 
+function extractRubyImports(
+  content: string,
+  rel: string,
+  edges: ImportEdge[],
+  importCount: Map<string, number>
+) {
+  // require_relative "./path"
+  const pattern = /require_relative\s+['"]([^'"]+)['"]/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content)) !== null) {
+    const target = match[1].replace(/^\.\//, "") + ".rb";
+    edges.push({ from: rel, to: target });
+    importCount.set(target, (importCount.get(target) || 0) + 1);
+  }
+}
+
+function extractElixirImports(
+  content: string,
+  rel: string,
+  edges: ImportEdge[],
+  importCount: Map<string, number>
+) {
+  // alias MyApp.Accounts.User
+  const pattern = /(?:alias|import|use)\s+([\w.]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content)) !== null) {
+    const mod = match[1];
+    // Convert module path to potential file: MyApp.Accounts.User -> lib/my_app/accounts/user.ex
+    if (mod.includes(".") && !mod.startsWith("Ecto") && !mod.startsWith("Phoenix") && !mod.startsWith("Plug")) {
+      const target = "lib/" + mod.split(".").map(s =>
+        s.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "")
+      ).join("/") + ".ex";
+      edges.push({ from: rel, to: target });
+      importCount.set(target, (importCount.get(target) || 0) + 1);
+    }
+  }
+}
+
+function extractJavaImports(
+  content: string,
+  rel: string,
+  edges: ImportEdge[],
+  importCount: Map<string, number>,
+  relPaths: string[]
+) {
+  // import com.myapp.service.UserService;
+  const pattern = /^import\s+([\w.]+);/gm;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content)) !== null) {
+    const imp = match[1];
+    // Skip standard library and common third-party
+    if (imp.startsWith("java.") || imp.startsWith("javax.") || imp.startsWith("org.springframework") || imp.startsWith("org.apache")) continue;
+    // Convert to path pattern: com.myapp.service.UserService -> UserService
+    const className = imp.split(".").pop()!;
+    const found = relPaths.find(p => p.endsWith(`/${className}.java`) || p.endsWith(`/${className}.kt`));
+    if (found && found !== rel) {
+      edges.push({ from: rel, to: found });
+      importCount.set(found, (importCount.get(found) || 0) + 1);
+    }
+  }
+}
+
+function extractRustImports(
+  content: string,
+  rel: string,
+  edges: ImportEdge[],
+  importCount: Map<string, number>
+) {
+  // mod my_module; or use crate::my_module::something;
+  const modPattern = /^mod\s+(\w+)\s*;/gm;
+  let match: RegExpExecArray | null;
+  while ((match = modPattern.exec(content)) !== null) {
+    const dir = dirname(rel);
+    const target = dir === "." ? `${match[1]}.rs` : `${dir}/${match[1]}.rs`;
+    edges.push({ from: rel, to: target });
+    importCount.set(target, (importCount.get(target) || 0) + 1);
+  }
+}
+
 function normalizeImportPath(
   importPath: string,
-  allFiles: string[],
-  root: string
+  relPathSet: Set<string>
 ): string | null {
   // Try exact match first
-  for (const file of allFiles) {
-    const rel = relative(root, file);
-    if (rel === importPath) return rel;
-  }
+  if (relPathSet.has(importPath)) return importPath;
 
   // Try with extensions
   const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs"];
   for (const ext of extensions) {
-    for (const file of allFiles) {
-      const rel = relative(root, file);
-      if (rel === importPath + ext) return rel;
-    }
+    if (relPathSet.has(importPath + ext)) return importPath + ext;
   }
 
   // Try index files
   for (const ext of extensions) {
-    for (const file of allFiles) {
-      const rel = relative(root, file);
-      if (rel === importPath + "/index" + ext) return rel;
-    }
+    if (relPathSet.has(importPath + "/index" + ext)) return importPath + "/index" + ext;
   }
 
   return null;

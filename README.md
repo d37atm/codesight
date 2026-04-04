@@ -2,7 +2,7 @@
 
 ### Your AI assistant wastes thousands of tokens every conversation just figuring out your project. codesight fixes that in one command.
 
-**Zero dependencies. 11 framework detectors. 4 ORM parsers. MCP server. One `npx` call.**
+**Zero dependencies. 25+ framework detectors. 4 ORM parsers. MCP server. One `npx` call.**
 
 [![npm version](https://img.shields.io/npm/v/codesight?style=for-the-badge&logo=npm&color=CB3837)](https://www.npmjs.com/package/codesight)
 [![npm downloads](https://img.shields.io/npm/dm/codesight?style=for-the-badge&logo=npm&color=blue&label=Monthly%20Downloads)](https://www.npmjs.com/package/codesight)
@@ -26,8 +26,12 @@
 ---
 
 ```
-0 dependencies · Node.js >= 18 · MIT
+0 dependencies · Node.js >= 18 · 27 tests · MIT
 ```
+
+## Works With
+
+**Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Windsurf, Cline, Aider**, and anything that reads markdown.
 
 ## Install
 
@@ -41,6 +45,7 @@ That's it. Run it in any project root. No config, no setup, no API keys.
 npx codesight --init       # Also generate CLAUDE.md, .cursorrules, codex.md, AGENTS.md
 npx codesight --open       # Also open interactive HTML report in browser
 npx codesight --mcp        # Start as MCP server for Claude Code / Cursor
+npx codesight --benchmark  # Show detailed token savings breakdown
 ```
 
 ## What It Does
@@ -54,8 +59,6 @@ Output size:      ~3,200 tokens
 Exploration cost: ~52,000 tokens (without codesight)
 Saved:            ~48,800 tokens per conversation
 ```
-
-Works with **Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Windsurf, Cline**, and anything that reads markdown.
 
 ## What It Generates
 
@@ -74,13 +77,14 @@ Works with **Claude Code, Cursor, GitHub Copilot, OpenAI Codex, Windsurf, Cline*
 
 ## Routes
 
-Not just paths. Methods, URL parameters, what each route touches (auth, database, cache, payments, AI, email, queues), and where the handler lives. Detects routes across 11 frameworks automatically.
+Not just paths. Methods, URL parameters, what each route touches (auth, database, cache, payments, AI, email, queues), and where the handler lives. Detects routes across 25+ frameworks automatically.
 
 ```markdown
 - `POST` `/auth/login` [auth, db, email]
 - `GET` `/api/projects/:id/analytics` params(id) [auth, db, cache]
 - `POST` `/api/billing/checkout` [auth, db, payment]
-- `POST` `/api/webhooks/stripe` [payment]
+- `QUERY` `getUsers` [db]             # tRPC procedures
+- `MUTATION` `createProject` [db, ai]  # tRPC mutations
 ```
 
 ## Schema
@@ -123,18 +127,44 @@ Every env var across your codebase, flagged as required or has default, with the
 - `PORT` (has default) — apps/api/src/index.ts
 ```
 
+## Token Benchmark
+
+See exactly where your token savings come from:
+
+```bash
+npx codesight --benchmark
+```
+
+```
+  Token Savings Breakdown:
+  ┌──────────────────────────────────────────────────┐
+  │ What codesight found         │ Exploration cost   │
+  ├──────────────────────────────┼────────────────────┤
+  │  65 routes                   │ ~26,000 tokens     │
+  │  18 schema models            │ ~ 5,400 tokens     │
+  │  16 components               │ ~ 4,000 tokens     │
+  │  36 library files            │ ~ 7,200 tokens     │
+  │  22 env vars                 │ ~ 2,200 tokens     │
+  │  92 files (search overhead)  │ ~ 4,000 tokens     │
+  ├──────────────────────────────┼────────────────────┤
+  │ codesight output             │ ~ 4,041 tokens     │
+  │ SAVED PER CONVERSATION       │ ~64,599 tokens     │
+  └──────────────────────────────┴────────────────────┘
+```
+
 ## Supported Stacks
 
 | Category | Supported |
 |---|---|
-| **Routes** | Hono, Express, Fastify, Next.js (App + Pages), Koa, FastAPI, Flask, Django, Go (net/http, Gin, Fiber) |
-| **Schema** | Drizzle, Prisma, TypeORM, SQLAlchemy |
+| **Routes** | Hono, Express, Fastify, Next.js (App + Pages), Koa, NestJS, tRPC, Elysia, AdonisJS, SvelteKit, Remix, Nuxt, FastAPI, Flask, Django, Go (net/http, Gin, Fiber, Echo, Chi), Rails, Phoenix, Spring Boot, Actix, Axum, raw http.createServer |
+| **Schema** | Drizzle, Prisma, TypeORM, Mongoose, Sequelize, SQLAlchemy, ActiveRecord, Ecto |
 | **Components** | React, Vue, Svelte (auto-filters shadcn/ui and Radix primitives) |
-| **Libraries** | TypeScript, JavaScript, Python, Go (exports with function signatures) |
+| **Libraries** | TypeScript, JavaScript, Python, Go, Ruby, Elixir, Java, Kotlin, Rust (exports with function signatures) |
 | **Middleware** | Auth, rate limiting, CORS, validation, logging, error handlers |
 | **Dependencies** | Import graph with hot file detection (most imported = highest blast radius) |
 | **Contracts** | URL params, request types, response types from route handlers |
 | **Monorepos** | pnpm, npm, yarn workspaces (cross-workspace detection) |
+| **Languages** | TypeScript, JavaScript, Python, Go, Ruby, Elixir, Java, Kotlin, Rust, PHP |
 
 ## AI Config Generation
 
@@ -183,6 +213,25 @@ npx codesight --open
 
 Opens an interactive HTML dashboard in your browser. Routes table with method badges and tags. Schema cards with fields and relations. Dependency hot files with impact bars. Env var audit. Token savings breakdown. Useful for onboarding or just seeing your project from above.
 
+## GitHub Action
+
+Add to your CI pipeline to keep context fresh on every push:
+
+```yaml
+name: codesight
+on: [push]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx codesight
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codesight
+          path: .codesight/
+```
+
 ## Watch Mode and Git Hook
 
 **Watch mode** re-scans when files change:
@@ -210,10 +259,26 @@ npx codesight --html                # Generate HTML report without opening
 npx codesight --mcp                 # Start MCP server
 npx codesight --watch               # Watch mode
 npx codesight --hook                # Install git pre-commit hook
+npx codesight --benchmark           # Detailed token savings breakdown
 npx codesight --json                # Output as JSON
 npx codesight -o .ai-context        # Custom output directory
 npx codesight -d 5                  # Limit directory depth
 ```
+
+## How It Compares
+
+Most AI context tools dump your entire codebase into one file. codesight takes a different approach: it **parses** your code to extract structured information.
+
+| | codesight | File concatenation tools |
+|---|---|---|
+| **Output** | Structured routes, schema, components, deps | Raw file contents |
+| **Token cost** | ~3,000-5,000 tokens | 50,000-500,000+ tokens |
+| **Route detection** | 25+ frameworks auto-detected | None |
+| **Schema parsing** | ORM-aware with relations | None |
+| **Dependency graph** | Hot file detection | None |
+| **AI config generation** | CLAUDE.md, .cursorrules, etc. | None |
+| **MCP server** | Built-in | Varies |
+| **Dependencies** | Zero | Varies |
 
 ## Contributing
 
@@ -223,6 +288,7 @@ cd codesight
 pnpm install
 pnpm dev              # Run locally
 pnpm build            # Compile TypeScript
+pnpm test             # Run 27 tests
 ```
 
 PRs welcome. Open an issue first for large changes.

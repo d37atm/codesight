@@ -51,6 +51,27 @@ export async function detectRoutes(
       case "koa":
         routes.push(...(await detectKoaRoutes(files, project)));
         break;
+      case "nestjs":
+        routes.push(...(await detectNestJSRoutes(files, project)));
+        break;
+      case "elysia":
+        routes.push(...(await detectElysiaRoutes(files, project)));
+        break;
+      case "adonis":
+        routes.push(...(await detectAdonisRoutes(files, project)));
+        break;
+      case "trpc":
+        routes.push(...(await detectTRPCRoutes(files, project)));
+        break;
+      case "sveltekit":
+        routes.push(...(await detectSvelteKitRoutes(files, project)));
+        break;
+      case "remix":
+        routes.push(...(await detectRemixRoutes(files, project)));
+        break;
+      case "nuxt":
+        routes.push(...(await detectNuxtRoutes(files, project)));
+        break;
       case "fastapi":
         routes.push(...(await detectFastAPIRoutes(files, project)));
         break;
@@ -63,7 +84,25 @@ export async function detectRoutes(
       case "gin":
       case "go-net-http":
       case "fiber":
+      case "echo":
+      case "chi":
         routes.push(...(await detectGoRoutes(files, project, fw)));
+        break;
+      case "rails":
+        routes.push(...(await detectRailsRoutes(files, project)));
+        break;
+      case "phoenix":
+        routes.push(...(await detectPhoenixRoutes(files, project)));
+        break;
+      case "spring":
+        routes.push(...(await detectSpringRoutes(files, project)));
+        break;
+      case "actix":
+      case "axum":
+        routes.push(...(await detectRustRoutes(files, project, fw)));
+        break;
+      case "raw-http":
+        routes.push(...(await detectRawHttpRoutes(files, project)));
         break;
     }
   }
@@ -84,7 +123,6 @@ async function detectNextAppRoutes(
   for (const file of routeFiles) {
     const content = await readFileSafe(file);
     const rel = relative(project.root, file);
-    // Extract API path from file path
     const pathMatch = rel.match(/(?:src\/)?app(.*)\/route\./);
     const apiPath = pathMatch ? pathMatch[1] || "/" : "/";
 
@@ -124,7 +162,6 @@ async function detectNextPagesApi(
     let apiPath = pathMatch ? pathMatch[1] : "/api";
     apiPath = apiPath.replace(/\/index$/, "").replace(/\[([^\]]+)\]/g, ":$1");
 
-    // Detect methods from handler
     const methods: string[] = [];
     for (const method of HTTP_METHODS) {
       if (content.includes(`req.method === '${method}'`) || content.includes(`req.method === "${method}"`)) {
@@ -160,14 +197,11 @@ async function detectHonoRoutes(
     if (!content.includes("hono") && !content.includes("Hono")) continue;
 
     const rel = relative(project.root, file);
-
-    // Match: app.get("/path", ...), router.post("/path", ...), .route("/base", ...)
     const routePattern =
       /\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
     while ((match = routePattern.exec(content)) !== null) {
       const path = match[2];
-      // Skip non-path strings (middleware keys like "user", "userId", etc.)
       if (!path.startsWith("/") && !path.startsWith(":")) continue;
       routes.push({
         method: match[1].toUpperCase(),
@@ -195,8 +229,6 @@ async function detectExpressRoutes(
     if (!content.includes("express") && !content.includes("Router")) continue;
 
     const rel = relative(project.root, file);
-
-    // Match: app.get("/path", ...), router.post("/path", ...)
     const routePattern =
       /(?:app|router|server)\s*\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -227,8 +259,6 @@ async function detectFastifyRoutes(
     if (!content.includes("fastify")) continue;
 
     const rel = relative(project.root, file);
-
-    // Match: fastify.get("/path", ...) or server.route({ method: 'GET', url: '/path' })
     const routePattern =
       /(?:fastify|server|app)\s*\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -272,7 +302,6 @@ async function detectKoaRoutes(
     if (!content.includes("koa") && !content.includes("Router")) continue;
 
     const rel = relative(project.root, file);
-
     const routePattern =
       /router\s*\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
     let match;
@@ -285,6 +314,294 @@ async function detectKoaRoutes(
         framework: "koa",
       });
     }
+  }
+
+  return routes;
+}
+
+// --- NestJS ---
+async function detectNestJSRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const tsFiles = files.filter((f) => f.match(/\.(ts|js)$/));
+  const routes: RouteInfo[] = [];
+
+  for (const file of tsFiles) {
+    const content = await readFileSafe(file);
+    if (!content.includes("@Controller") && !content.includes("@Get") && !content.includes("@Post")) continue;
+
+    const rel = relative(project.root, file);
+
+    // Extract controller base path: @Controller('users') or @Controller('/users')
+    const controllerMatch = content.match(/@Controller\s*\(\s*['"`]([^'"`]*)['"`]\s*\)/);
+    const basePath = controllerMatch ? "/" + controllerMatch[1].replace(/^\//, "") : "";
+
+    // Match method decorators: @Get(), @Post('/create'), @Put(':id'), etc.
+    const decoratorPattern = /@(Get|Post|Put|Patch|Delete|Options|Head|All)\s*\(\s*(?:['"`]([^'"`]*)['"`])?\s*\)/gi;
+    let match;
+    while ((match = decoratorPattern.exec(content)) !== null) {
+      const method = match[1].toUpperCase();
+      const subPath = match[2] || "";
+      const fullPath = basePath + (subPath ? "/" + subPath.replace(/^\//, "") : "") || "/";
+      routes.push({
+        method,
+        path: fullPath,
+        file: rel,
+        tags: detectTags(content),
+        framework: "nestjs",
+      });
+    }
+  }
+
+  return routes;
+}
+
+// --- Elysia (Bun) ---
+async function detectElysiaRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const tsFiles = files.filter((f) => f.match(/\.(ts|js|mjs)$/));
+  const routes: RouteInfo[] = [];
+
+  for (const file of tsFiles) {
+    const content = await readFileSafe(file);
+    if (!content.includes("elysia") && !content.includes("Elysia")) continue;
+
+    const rel = relative(project.root, file);
+    const routePattern = /\.\s*(get|post|put|patch|delete|options|all)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
+    let match;
+    while ((match = routePattern.exec(content)) !== null) {
+      const path = match[2];
+      if (!path.startsWith("/") && !path.startsWith(":")) continue;
+      routes.push({
+        method: match[1].toUpperCase(),
+        path,
+        file: rel,
+        tags: detectTags(content),
+        framework: "elysia",
+      });
+    }
+  }
+
+  return routes;
+}
+
+// --- AdonisJS ---
+async function detectAdonisRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  // AdonisJS uses start/routes.ts with Route.get(), Route.post(), router.get(), etc.
+  const routeFiles = files.filter(
+    (f) => f.match(/routes\.(ts|js)$/) || f.match(/\/routes\/.*\.(ts|js)$/)
+  );
+  const routes: RouteInfo[] = [];
+
+  for (const file of routeFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    const routePattern = /(?:Route|router)\s*\.\s*(get|post|put|patch|delete|any)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
+    let match;
+    while ((match = routePattern.exec(content)) !== null) {
+      routes.push({
+        method: match[1].toUpperCase() === "ANY" ? "ALL" : match[1].toUpperCase(),
+        path: match[2],
+        file: rel,
+        tags: detectTags(content),
+        framework: "adonis",
+      });
+    }
+  }
+
+  return routes;
+}
+
+// --- tRPC ---
+async function detectTRPCRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const tsFiles = files.filter((f) => f.match(/\.(ts|js)$/));
+  const routes: RouteInfo[] = [];
+
+  for (const file of tsFiles) {
+    const content = await readFileSafe(file);
+    if (!content.includes("Procedure") && !content.includes("procedure") && !content.includes("router")) continue;
+    if (!content.includes("trpc") && !content.includes("TRPC") && !content.includes("createTRPCRouter") && !content.includes("publicProcedure") && !content.includes("protectedProcedure")) continue;
+
+    const rel = relative(project.root, file);
+
+    // Match tRPC procedure definitions like:
+    //   list: publicProcedure.query(...)
+    //   create: publicProcedure.input(schema).mutation(...)
+    //   getById: t.procedure.input(z.object({...})).query(...)
+    // Strategy: find lines with "query(" or "mutation(" and extract the procedure name
+    const lines = content.split("\n");
+    for (const line of lines) {
+      const queryMatch = line.match(/^\s*(\w+)\s*:\s*.*\.(query)\s*\(/);
+      const mutationMatch = line.match(/^\s*(\w+)\s*:\s*.*\.(mutation)\s*\(/);
+      const m = queryMatch || mutationMatch;
+      if (m) {
+        const procName = m[1];
+        const isQuery = m[2] === "query";
+        if (!routes.some((r) => r.path === procName && r.file === rel)) {
+          routes.push({
+            method: isQuery ? "QUERY" : "MUTATION",
+            path: procName,
+            file: rel,
+            tags: detectTags(content),
+            framework: "trpc",
+          });
+        }
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --- SvelteKit ---
+async function detectSvelteKitRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  // SvelteKit API routes: src/routes/**/+server.ts
+  const routeFiles = files.filter(
+    (f) => f.match(/\/routes\/.*\+server\.(ts|js)$/)
+  );
+  const routes: RouteInfo[] = [];
+
+  for (const file of routeFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    // Extract path from file structure: src/routes/api/users/+server.ts -> /api/users
+    const pathMatch = rel.match(/(?:src\/)?routes(.*)\/\+server\./);
+    let apiPath = pathMatch ? pathMatch[1] || "/" : "/";
+    // Convert [param] to :param
+    apiPath = apiPath.replace(/\[([^\]]+)\]/g, ":$1");
+
+    for (const method of HTTP_METHODS) {
+      const pattern = new RegExp(
+        `export\\s+(?:async\\s+)?function\\s+${method}\\b`
+      );
+      if (pattern.test(content)) {
+        routes.push({
+          method,
+          path: apiPath,
+          file: rel,
+          tags: detectTags(content),
+          framework: "sveltekit",
+        });
+      }
+    }
+
+    // Also detect: export const GET = ...
+    for (const method of HTTP_METHODS) {
+      const constPattern = new RegExp(`export\\s+const\\s+${method}\\s*[=:]`);
+      if (constPattern.test(content) && !routes.some((r) => r.method === method && r.path === apiPath)) {
+        routes.push({
+          method,
+          path: apiPath,
+          file: rel,
+          tags: detectTags(content),
+          framework: "sveltekit",
+        });
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --- Remix ---
+async function detectRemixRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  // Remix routes: app/routes/*.tsx with loader/action exports
+  const routeFiles = files.filter(
+    (f) => f.match(/\/routes\/.*\.(ts|tsx|js|jsx)$/)
+  );
+  const routes: RouteInfo[] = [];
+
+  for (const file of routeFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    // Convert filename to route path
+    const pathMatch = rel.match(/(?:app\/)?routes\/(.+)\.(ts|tsx|js|jsx)$/);
+    if (!pathMatch) continue;
+    let routePath = "/" + pathMatch[1]
+      .replace(/\./g, "/")       // dots become path segments
+      .replace(/_index$/, "")    // _index -> root of parent
+      .replace(/\$/g, ":")       // $param -> :param
+      .replace(/\[([^\]]+)\]/g, ":$1");
+
+    if (content.match(/export\s+(?:async\s+)?function\s+loader\b/) || content.match(/export\s+const\s+loader\b/)) {
+      routes.push({
+        method: "GET",
+        path: routePath,
+        file: rel,
+        tags: detectTags(content),
+        framework: "remix",
+      });
+    }
+    if (content.match(/export\s+(?:async\s+)?function\s+action\b/) || content.match(/export\s+const\s+action\b/)) {
+      routes.push({
+        method: "POST",
+        path: routePath,
+        file: rel,
+        tags: detectTags(content),
+        framework: "remix",
+      });
+    }
+  }
+
+  return routes;
+}
+
+// --- Nuxt ---
+async function detectNuxtRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  // Nuxt server routes: server/api/**/*.ts
+  const routeFiles = files.filter(
+    (f) => f.match(/\/server\/(?:api|routes)\/.*\.(ts|js|mjs)$/)
+  );
+  const routes: RouteInfo[] = [];
+
+  for (const file of routeFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    // Extract path from file structure
+    const pathMatch = rel.match(/server\/((?:api|routes)\/.+)\.(ts|js|mjs)$/);
+    if (!pathMatch) continue;
+    let routePath = "/" + pathMatch[1]
+      .replace(/\/index$/, "")
+      .replace(/\[([^\]]+)\]/g, ":$1");
+
+    // Detect method from filename (e.g., users.get.ts, users.post.ts)
+    const methodFromFile = basename(file).match(/\.(get|post|put|patch|delete)\.(ts|js|mjs)$/);
+    const method = methodFromFile ? methodFromFile[1].toUpperCase() : "ALL";
+
+    // Clean path: remove method suffix from path
+    if (methodFromFile) {
+      routePath = routePath.replace(new RegExp(`\\.${methodFromFile[1]}$`), "");
+    }
+
+    routes.push({
+      method,
+      path: routePath,
+      file: rel,
+      tags: detectTags(content),
+      framework: "nuxt",
+    });
   }
 
   return routes;
@@ -303,8 +620,6 @@ async function detectFastAPIRoutes(
     if (!content.includes("fastapi") && !content.includes("FastAPI") && !content.includes("APIRouter")) continue;
 
     const rel = relative(project.root, file);
-
-    // Match: @app.get("/path") or @router.post("/path") or @api_router.get("/path")
     const routePattern =
       /@\w+\s*\.\s*(get|post|put|patch|delete|options)\s*\(\s*['"]([^'"]+)['"]/gi;
     let match;
@@ -335,10 +650,8 @@ async function detectFlaskRoutes(
     if (!content.includes("flask") && !content.includes("Flask") && !content.includes("Blueprint")) continue;
 
     const rel = relative(project.root, file);
-
-    // Match: @app.route("/path", methods=["GET", "POST"])
     const routePattern =
-      /@(?:app|bp|blueprint)\s*\.\s*route\s*\(\s*['"]([^'"]+)['"](?:\s*,\s*methods\s*=\s*\[([^\]]+)\])?\s*\)/gi;
+      /@(?:app|bp|blueprint|\w+)\s*\.\s*route\s*\(\s*['"]([^'"]+)['"](?:\s*,\s*methods\s*=\s*\[([^\]]+)\])?\s*\)/gi;
     let match;
     while ((match = routePattern.exec(content)) !== null) {
       const path = match[1];
@@ -375,9 +688,8 @@ async function detectDjangoRoutes(
     const content = await readFileSafe(file);
     const rel = relative(project.root, file);
 
-    // Match: path("api/v1/users/", views.UserView.as_view())
-    const pathPattern =
-      /path\s*\(\s*['"]([^'"]*)['"]\s*,/g;
+    // path("api/v1/users/", views.UserView.as_view())
+    const pathPattern = /path\s*\(\s*['"]([^'"]*)['"]\s*,/g;
     let match;
     while ((match = pathPattern.exec(content)) !== null) {
       routes.push({
@@ -393,7 +705,7 @@ async function detectDjangoRoutes(
   return routes;
 }
 
-// --- Go ---
+// --- Go (net/http, Gin, Fiber, Echo, Chi) ---
 async function detectGoRoutes(
   files: string[],
   project: ProjectInfo,
@@ -407,7 +719,6 @@ async function detectGoRoutes(
     const rel = relative(project.root, file);
 
     if (fw === "gin") {
-      // Match: r.GET("/path", handler)
       const pattern = /\.\s*(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s*\(\s*["']([^"']+)["']/g;
       let match;
       while ((match = pattern.exec(content)) !== null) {
@@ -420,7 +731,32 @@ async function detectGoRoutes(
         });
       }
     } else if (fw === "fiber") {
-      // Match: app.Get("/path", handler)
+      const pattern = /\.\s*(Get|Post|Put|Patch|Delete|Options|Head)\s*\(\s*["']([^"']+)["']/g;
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        routes.push({
+          method: match[1].toUpperCase(),
+          path: match[2],
+          file: rel,
+          tags: detectTags(content),
+          framework: fw,
+        });
+      }
+    } else if (fw === "echo") {
+      // e.GET("/path", handler) or g.POST("/path", handler)
+      const pattern = /\.\s*(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s*\(\s*["']([^"']+)["']/g;
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        routes.push({
+          method: match[1],
+          path: match[2],
+          file: rel,
+          tags: detectTags(content),
+          framework: fw,
+        });
+      }
+    } else if (fw === "chi") {
+      // r.Get("/path", handler), r.Post("/path", handler)
       const pattern = /\.\s*(Get|Post|Put|Patch|Delete|Options|Head)\s*\(\s*["']([^"']+)["']/g;
       let match;
       while ((match = pattern.exec(content)) !== null) {
@@ -434,8 +770,7 @@ async function detectGoRoutes(
       }
     } else {
       // net/http: http.HandleFunc("/path", handler) or mux.HandleFunc("/path", handler)
-      const pattern =
-        /(?:HandleFunc|Handle)\s*\(\s*["']([^"']+)["']/g;
+      const pattern = /(?:HandleFunc|Handle)\s*\(\s*["']([^"']+)["']/g;
       let match;
       while ((match = pattern.exec(content)) !== null) {
         routes.push({
@@ -444,6 +779,270 @@ async function detectGoRoutes(
           file: rel,
           tags: detectTags(content),
           framework: fw,
+        });
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --- Rails ---
+async function detectRailsRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const routeFiles = files.filter((f) => f.match(/routes\.rb$/));
+  const routes: RouteInfo[] = [];
+
+  for (const file of routeFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    // get '/users', to: 'users#index'
+    const routePattern = /\b(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gi;
+    let match;
+    while ((match = routePattern.exec(content)) !== null) {
+      routes.push({
+        method: match[1].toUpperCase(),
+        path: match[2],
+        file: rel,
+        tags: detectTags(content),
+        framework: "rails",
+      });
+    }
+
+    // resources :users (generates RESTful routes)
+    const resourcePattern = /resources?\s+:(\w+)/g;
+    while ((match = resourcePattern.exec(content)) !== null) {
+      const name = match[1];
+      for (const [method, suffix] of [
+        ["GET", ""], ["GET", "/:id"], ["POST", ""],
+        ["PUT", "/:id"], ["PATCH", "/:id"], ["DELETE", "/:id"],
+      ] as const) {
+        routes.push({
+          method,
+          path: `/${name}${suffix}`,
+          file: rel,
+          tags: detectTags(content),
+          framework: "rails",
+        });
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --- Phoenix (Elixir) ---
+async function detectPhoenixRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const routeFiles = files.filter((f) => f.match(/router\.ex$/));
+  const routes: RouteInfo[] = [];
+
+  for (const file of routeFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    // get "/users", UserController, :index
+    const routePattern = /\b(get|post|put|patch|delete)\s+["']([^"']+)["']/gi;
+    let match;
+    while ((match = routePattern.exec(content)) !== null) {
+      routes.push({
+        method: match[1].toUpperCase(),
+        path: match[2],
+        file: rel,
+        tags: detectTags(content),
+        framework: "phoenix",
+      });
+    }
+
+    // resources "/users", UserController
+    const resourcePattern = /resources\s+["']([^"']+)["']/g;
+    while ((match = resourcePattern.exec(content)) !== null) {
+      const basePath = match[1];
+      for (const [method, suffix] of [
+        ["GET", ""], ["GET", "/:id"], ["POST", ""],
+        ["PUT", "/:id"], ["PATCH", "/:id"], ["DELETE", "/:id"],
+      ] as const) {
+        routes.push({
+          method,
+          path: `${basePath}${suffix}`,
+          file: rel,
+          tags: detectTags(content),
+          framework: "phoenix",
+        });
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --- Spring Boot (Java/Kotlin) ---
+async function detectSpringRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const javaFiles = files.filter((f) => f.match(/\.(java|kt)$/));
+  const routes: RouteInfo[] = [];
+
+  for (const file of javaFiles) {
+    const content = await readFileSafe(file);
+    if (!content.includes("@RestController") && !content.includes("@Controller") && !content.includes("@RequestMapping")) continue;
+
+    const rel = relative(project.root, file);
+
+    // Extract class-level @RequestMapping
+    const classMapping = content.match(/@RequestMapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']/);
+    const basePath = classMapping ? classMapping[1] : "";
+
+    // @GetMapping("/path"), @PostMapping("/path"), etc.
+    const mappingPattern = /@(Get|Post|Put|Patch|Delete)Mapping\s*\(\s*(?:value\s*=\s*)?(?:["']([^"']*)["'])?\s*\)/gi;
+    let match;
+    while ((match = mappingPattern.exec(content)) !== null) {
+      const method = match[1].toUpperCase();
+      const subPath = match[2] || "";
+      routes.push({
+        method,
+        path: basePath + subPath || "/",
+        file: rel,
+        tags: detectTags(content),
+        framework: "spring",
+      });
+    }
+
+    // @RequestMapping(method = RequestMethod.GET, value = "/path")
+    const reqMappingPattern = /@RequestMapping\s*\([^)]*method\s*=\s*RequestMethod\.(\w+)[^)]*value\s*=\s*["']([^"']+)["']/gi;
+    while ((match = reqMappingPattern.exec(content)) !== null) {
+      routes.push({
+        method: match[1].toUpperCase(),
+        path: basePath + match[2],
+        file: rel,
+        tags: detectTags(content),
+        framework: "spring",
+      });
+    }
+  }
+
+  return routes;
+}
+
+// --- Rust (Actix-web, Axum) ---
+async function detectRustRoutes(
+  files: string[],
+  project: ProjectInfo,
+  fw: Framework
+): Promise<RouteInfo[]> {
+  const rsFiles = files.filter((f) => f.endsWith(".rs"));
+  const routes: RouteInfo[] = [];
+
+  for (const file of rsFiles) {
+    const content = await readFileSafe(file);
+    const rel = relative(project.root, file);
+
+    if (fw === "actix") {
+      // #[get("/path")], #[post("/path")], etc.
+      const attrPattern = /#\[(get|post|put|patch|delete)\s*\(\s*"([^"]+)"\s*\)\s*\]/gi;
+      let match;
+      while ((match = attrPattern.exec(content)) !== null) {
+        routes.push({
+          method: match[1].toUpperCase(),
+          path: match[2],
+          file: rel,
+          tags: detectTags(content),
+          framework: "actix",
+        });
+      }
+      // .route("/path", web::get().to(handler))
+      const routePattern = /\.route\s*\(\s*"([^"]+)"\s*,\s*web::(get|post|put|patch|delete)\s*\(\s*\)/gi;
+      while ((match = routePattern.exec(content)) !== null) {
+        routes.push({
+          method: match[2].toUpperCase(),
+          path: match[1],
+          file: rel,
+          tags: detectTags(content),
+          framework: "actix",
+        });
+      }
+    } else if (fw === "axum") {
+      // .route("/path", get(handler)) or .route("/path", post(handler).get(handler))
+      const routePattern = /\.route\s*\(\s*"([^"]+)"\s*,\s*(get|post|put|patch|delete)\s*\(/gi;
+      let match;
+      while ((match = routePattern.exec(content)) !== null) {
+        routes.push({
+          method: match[2].toUpperCase(),
+          path: match[1],
+          file: rel,
+          tags: detectTags(content),
+          framework: "axum",
+        });
+      }
+    }
+  }
+
+  return routes;
+}
+
+// --- Raw HTTP (Node.js http.createServer, Deno, Bun.serve) ---
+async function detectRawHttpRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const tsFiles = files.filter((f) => f.match(/\.(ts|js|mjs|cjs)$/));
+  const routes: RouteInfo[] = [];
+  const globalSeen = new Set<string>();
+
+  for (const file of tsFiles) {
+    const content = await readFileSafe(file);
+    // Only scan files that handle HTTP requests
+    if (!content.match(/(?:createServer|http\.|req\.|request\.|url|pathname|Bun\.serve|Deno\.serve)/)) continue;
+
+    const rel = relative(project.root, file);
+
+    const patterns = [
+      // Direct comparison: url === "/path" or pathname === "/path"
+      /(?:url|pathname|parsedUrl\.pathname)\s*===?\s*['"`](\/[a-zA-Z0-9/_:.\-]+)['"`]/g,
+      // startsWith: url.startsWith("/api")
+      /(?:url|pathname)\s*\.startsWith\s*\(\s*['"`](\/[a-zA-Z0-9/_:.\-]+)['"`]\s*\)/g,
+      // Switch case: case "/path":
+      /case\s+['"`](\/[a-zA-Z0-9/_:.\-]+)['"`]\s*:/g,
+    ];
+
+    const fileTags = detectTags(content);
+
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(content)) !== null) {
+        const path = match[1];
+        // Skip paths that are clearly not routes
+        if (path.includes("\\") || path.length > 100 || path.includes("..")) continue;
+        // Skip file extensions
+        if (path.match(/\.\w{2,4}$/)) continue;
+
+        const key = `${rel}:${path}`;
+        if (globalSeen.has(key)) continue;
+        globalSeen.add(key);
+
+        // Try to detect method from surrounding context (within 300 chars)
+        const surroundingStart = Math.max(0, match.index - 300);
+        const surroundingEnd = Math.min(content.length, match.index + 300);
+        const surrounding = content.substring(surroundingStart, surroundingEnd);
+
+        let method = "ALL";
+        const methodMatch = surrounding.match(/method\s*===?\s*['"`](GET|POST|PUT|PATCH|DELETE)['"`]/i);
+        if (methodMatch) {
+          method = methodMatch[1].toUpperCase();
+        }
+
+        routes.push({
+          method,
+          path,
+          file: rel,
+          tags: fileTags,
+          framework: "raw-http",
         });
       }
     }

@@ -44,6 +44,13 @@ const CODE_EXTENSIONS = new Set([
   ".go",
   ".vue",
   ".svelte",
+  ".rb",
+  ".ex",
+  ".exs",
+  ".java",
+  ".kt",
+  ".rs",
+  ".php",
 ]);
 
 export async function collectFiles(
@@ -191,6 +198,27 @@ async function detectFrameworks(
   // Koa
   if (deps["koa"]) frameworks.push("koa");
 
+  // NestJS
+  if (deps["@nestjs/core"] || deps["@nestjs/common"]) frameworks.push("nestjs");
+
+  // Elysia (Bun)
+  if (deps["elysia"]) frameworks.push("elysia");
+
+  // AdonisJS
+  if (deps["@adonisjs/core"]) frameworks.push("adonis");
+
+  // tRPC
+  if (deps["@trpc/server"]) frameworks.push("trpc");
+
+  // SvelteKit
+  if (deps["@sveltejs/kit"]) frameworks.push("sveltekit");
+
+  // Remix
+  if (deps["@remix-run/node"] || deps["@remix-run/react"]) frameworks.push("remix");
+
+  // Nuxt
+  if (deps["nuxt"]) frameworks.push("nuxt");
+
   // Python frameworks - check for requirements.txt or pyproject.toml
   const pyDeps = await getPythonDeps(root);
   if (pyDeps.includes("flask")) frameworks.push("flask");
@@ -202,6 +230,53 @@ async function detectFrameworks(
   if (goDeps.includes("net/http")) frameworks.push("go-net-http");
   if (goDeps.includes("gin-gonic/gin")) frameworks.push("gin");
   if (goDeps.includes("gofiber/fiber")) frameworks.push("fiber");
+  if (goDeps.some((d) => d.includes("labstack/echo"))) frameworks.push("echo");
+  if (goDeps.some((d) => d.includes("go-chi/chi"))) frameworks.push("chi");
+
+  // Ruby on Rails
+  const hasGemfile = await fileExists(join(root, "Gemfile"));
+  if (hasGemfile) {
+    try {
+      const gemfile = await readFile(join(root, "Gemfile"), "utf-8");
+      if (gemfile.includes("rails")) frameworks.push("rails");
+    } catch {}
+  }
+
+  // Phoenix (Elixir)
+  const hasMixFile = await fileExists(join(root, "mix.exs"));
+  if (hasMixFile) {
+    try {
+      const mix = await readFile(join(root, "mix.exs"), "utf-8");
+      if (mix.includes("phoenix")) frameworks.push("phoenix");
+    } catch {}
+  }
+
+  // Spring Boot (Java/Kotlin)
+  const hasPomXml = await fileExists(join(root, "pom.xml"));
+  const hasBuildGradle = await fileExists(join(root, "build.gradle")) || await fileExists(join(root, "build.gradle.kts"));
+  if (hasPomXml || hasBuildGradle) {
+    try {
+      const buildFile = hasPomXml
+        ? await readFile(join(root, "pom.xml"), "utf-8")
+        : await readFile(join(root, hasBuildGradle ? "build.gradle.kts" : "build.gradle"), "utf-8");
+      if (buildFile.includes("spring")) frameworks.push("spring");
+    } catch {}
+  }
+
+  // Rust web frameworks
+  const hasCargoToml = await fileExists(join(root, "Cargo.toml"));
+  if (hasCargoToml) {
+    try {
+      const cargo = await readFile(join(root, "Cargo.toml"), "utf-8");
+      if (cargo.includes("actix-web")) frameworks.push("actix");
+      else if (cargo.includes("axum")) frameworks.push("axum");
+    } catch {}
+  }
+
+  // Fallback: detect raw http.createServer if no other frameworks found
+  if (frameworks.length === 0) {
+    frameworks.push("raw-http");
+  }
 
   return frameworks;
 }
@@ -216,12 +291,32 @@ async function detectORMs(
   if (deps["drizzle-orm"]) orms.push("drizzle");
   if (deps["prisma"] || deps["@prisma/client"]) orms.push("prisma");
   if (deps["typeorm"]) orms.push("typeorm");
+  if (deps["mongoose"]) orms.push("mongoose");
+  if (deps["sequelize"]) orms.push("sequelize");
 
   const pyDeps = await getPythonDeps(root);
   if (pyDeps.includes("sqlalchemy")) orms.push("sqlalchemy");
 
   const goDeps = await getGoDeps(root);
   if (goDeps.some((d) => d.includes("gorm"))) orms.push("gorm");
+
+  // Rails ActiveRecord
+  const hasGemfile = await fileExists(join(root, "Gemfile"));
+  if (hasGemfile) {
+    try {
+      const gemfile = await readFile(join(root, "Gemfile"), "utf-8");
+      if (gemfile.includes("activerecord") || gemfile.includes("rails")) orms.push("activerecord");
+    } catch {}
+  }
+
+  // Phoenix Ecto
+  const hasMixFile = await fileExists(join(root, "mix.exs"));
+  if (hasMixFile) {
+    try {
+      const mix = await readFile(join(root, "mix.exs"), "utf-8");
+      if (mix.includes("ecto")) orms.push("ecto");
+    } catch {}
+  }
 
   return orms;
 }
@@ -238,21 +333,31 @@ function detectComponentFramework(
 async function detectLanguage(
   root: string,
   deps: Record<string, string>
-): Promise<"typescript" | "javascript" | "python" | "go" | "mixed"> {
+): Promise<"typescript" | "javascript" | "python" | "go" | "ruby" | "elixir" | "java" | "kotlin" | "rust" | "php" | "mixed"> {
   const hasTsConfig = await fileExists(join(root, "tsconfig.json"));
   const hasPyProject = await fileExists(join(root, "pyproject.toml")) || await fileExists(join(root, "backend/pyproject.toml"));
   const hasGoMod = await fileExists(join(root, "go.mod"));
   const hasRequirements = await fileExists(join(root, "requirements.txt")) || await fileExists(join(root, "backend/requirements.txt"));
+  const hasGemfile = await fileExists(join(root, "Gemfile"));
+  const hasMixExs = await fileExists(join(root, "mix.exs"));
+  const hasPomXml = await fileExists(join(root, "pom.xml"));
+  const hasBuildGradle = await fileExists(join(root, "build.gradle")) || await fileExists(join(root, "build.gradle.kts"));
+  const hasCargoToml = await fileExists(join(root, "Cargo.toml"));
+  const hasComposerJson = await fileExists(join(root, "composer.json"));
 
   const langs: string[] = [];
   if (hasTsConfig || deps["typescript"]) langs.push("typescript");
   if (hasPyProject || hasRequirements) langs.push("python");
   if (hasGoMod) langs.push("go");
+  if (hasGemfile) langs.push("ruby");
+  if (hasMixExs) langs.push("elixir");
+  if (hasBuildGradle) langs.push("kotlin");
+  else if (hasPomXml) langs.push("java");
+  if (hasCargoToml) langs.push("rust");
+  if (hasComposerJson) langs.push("php");
 
   if (langs.length > 1) return "mixed";
-  if (langs[0] === "typescript") return "typescript";
-  if (langs[0] === "python") return "python";
-  if (langs[0] === "go") return "go";
+  if (langs.length === 1) return langs[0] as any;
   return "javascript";
 }
 

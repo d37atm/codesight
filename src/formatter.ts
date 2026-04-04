@@ -305,14 +305,27 @@ function formatCombined(
 
 function filterNotableDeps(deps: Record<string, string>): [string, string][] {
   const notable = new Set([
+    // Frameworks
     "next", "react", "vue", "svelte", "hono", "express", "fastify", "koa",
-    "drizzle-orm", "prisma", "@prisma/client", "typeorm", "tailwindcss",
-    "stripe", "@polar-sh/sdk", "resend", "bullmq", "redis", "ioredis",
-    "zod", "trpc", "@trpc/server", "better-auth", "@clerk/nextjs",
-    "next-auth", "lucia", "passport", "@anthropic-ai/sdk", "openai",
-    "ai", "langchain", "supabase", "@supabase/supabase-js", "mongoose",
-    "pg", "mysql2", "better-sqlite3", "playwright", "puppeteer",
-    "socket.io", "graphql", "@apollo/server",
+    "@nestjs/core", "@nestjs/common", "elysia", "@adonisjs/core",
+    "@sveltejs/kit", "@remix-run/node", "@remix-run/react", "nuxt",
+    // ORMs & DB
+    "drizzle-orm", "prisma", "@prisma/client", "typeorm", "mongoose", "sequelize",
+    "pg", "mysql2", "better-sqlite3", "knex",
+    // Auth
+    "better-auth", "@clerk/nextjs", "next-auth", "lucia", "passport", "@auth/core",
+    // Payments
+    "stripe", "@polar-sh/sdk", "resend", "@lemonsqueezy/lemonsqueezy.js",
+    // Infrastructure
+    "bullmq", "redis", "ioredis", "tailwindcss",
+    // API
+    "zod", "@trpc/server", "graphql", "@apollo/server",
+    // AI
+    "@anthropic-ai/sdk", "openai", "ai", "langchain", "@google/generative-ai",
+    // Services
+    "supabase", "@supabase/supabase-js", "firebase", "@firebase/app",
+    // Testing/tools
+    "playwright", "puppeteer", "socket.io",
   ]);
 
   return Object.entries(deps)

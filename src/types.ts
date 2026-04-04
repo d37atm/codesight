@@ -5,15 +5,30 @@ export type Framework =
   | "express"
   | "fastify"
   | "koa"
+  | "nestjs"
+  | "elysia"
+  | "adonis"
+  | "trpc"
+  | "sveltekit"
+  | "remix"
+  | "nuxt"
   | "flask"
   | "fastapi"
   | "django"
   | "go-net-http"
   | "gin"
   | "fiber"
+  | "echo"
+  | "chi"
+  | "rails"
+  | "phoenix"
+  | "spring"
+  | "actix"
+  | "axum"
+  | "raw-http"
   | "unknown";
 
-export type ORM = "drizzle" | "prisma" | "typeorm" | "sqlalchemy" | "gorm" | "unknown";
+export type ORM = "drizzle" | "prisma" | "typeorm" | "sqlalchemy" | "gorm" | "mongoose" | "sequelize" | "activerecord" | "ecto" | "unknown";
 
 export type ComponentFramework = "react" | "vue" | "svelte" | "unknown";
 
@@ -25,7 +40,7 @@ export interface ProjectInfo {
   componentFramework: ComponentFramework;
   isMonorepo: boolean;
   workspaces: WorkspaceInfo[];
-  language: "typescript" | "javascript" | "python" | "go" | "mixed";
+  language: "typescript" | "javascript" | "python" | "go" | "ruby" | "elixir" | "java" | "kotlin" | "rust" | "php" | "mixed";
 }
 
 export interface WorkspaceInfo {

@@ -17,7 +17,7 @@ import { generateAIConfigs } from "./generators/ai-config.js";
 import { generateHtmlReport } from "./generators/html-report.js";
 import type { ScanResult } from "./types.js";
 
-const VERSION = "1.0.1";
+const VERSION = "1.1.0";
 const BRAND = "codesight";
 
 function printHelp() {
@@ -36,6 +36,7 @@ function printHelp() {
     --open               Generate HTML report and open in browser
     --mcp                Start as MCP server (for Claude Code, Cursor)
     --json               Output JSON instead of markdown
+    --benchmark          Show detailed token savings breakdown
     -v, --version        Show version
     -h, --help           Show this help
 
@@ -256,6 +257,7 @@ async function main() {
   let doHtml = false;
   let doOpen = false;
   let doMcp = false;
+  let doBenchmark = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -278,6 +280,8 @@ async function main() {
       doOpen = true;
     } else if (arg === "--mcp") {
       doMcp = true;
+    } else if (arg === "--benchmark") {
+      doBenchmark = true;
     } else if (!arg.startsWith("-")) {
       targetDir = resolve(arg);
     }
@@ -329,6 +333,38 @@ async function main() {
       exec(`${cmd} "${reportPath}"`);
       console.log("  Opening in browser...");
     }
+  }
+
+  // Benchmark output
+  if (doBenchmark) {
+    const ts = result.tokenStats;
+    const r = result;
+    console.log(`
+  Token Savings Breakdown:
+  ┌──────────────────────────────────────────────────┐
+  │ What codesight found         │ Exploration cost   │
+  ├──────────────────────────────┼────────────────────┤
+  │ ${String(r.routes.length).padStart(3)} routes                   │ ~${(r.routes.length * 400).toLocaleString().padStart(6)} tokens     │
+  │ ${String(r.schemas.length).padStart(3)} schema models            │ ~${(r.schemas.length * 300).toLocaleString().padStart(6)} tokens     │
+  │ ${String(r.components.length).padStart(3)} components              │ ~${(r.components.length * 250).toLocaleString().padStart(6)} tokens     │
+  │ ${String(r.libs.length).padStart(3)} library files            │ ~${(r.libs.length * 200).toLocaleString().padStart(6)} tokens     │
+  │ ${String(r.config.envVars.length).padStart(3)} env vars                │ ~${(r.config.envVars.length * 100).toLocaleString().padStart(6)} tokens     │
+  │ ${String(r.middleware.length).padStart(3)} middleware              │ ~${(r.middleware.length * 200).toLocaleString().padStart(6)} tokens     │
+  │ ${String(r.graph.hotFiles.length).padStart(3)} hot files               │ ~${(r.graph.hotFiles.length * 150).toLocaleString().padStart(6)} tokens     │
+  │ ${String(ts.fileCount).padStart(3)} files (search overhead) │ ~${(Math.min(ts.fileCount, 50) * 80).toLocaleString().padStart(6)} tokens     │
+  ├──────────────────────────────┼────────────────────┤
+  │ codesight output             │ ~${ts.outputTokens.toLocaleString().padStart(6)} tokens     │
+  │ Manual exploration (1.3x)    │ ~${ts.estimatedExplorationTokens.toLocaleString().padStart(6)} tokens     │
+  │ SAVED PER CONVERSATION       │ ~${ts.saved.toLocaleString().padStart(6)} tokens     │
+  └──────────────────────────────┴────────────────────┘
+
+  How this is calculated:
+  - Each route found saves ~400 tokens of file reading + grep exploration
+  - Each schema model saves ~300 tokens of migration/ORM file parsing
+  - Each component saves ~250 tokens of prop discovery
+  - Search overhead: AI typically runs ${Math.min(ts.fileCount, 50)} glob/grep operations
+  - 1.3x multiplier: AI revisits files during multi-turn exploration
+`);
   }
 
   // Watch mode (blocks)
