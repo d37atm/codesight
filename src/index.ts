@@ -19,7 +19,7 @@ import type { ScanResult } from "./types.js";
 import type { CodesightConfig } from "./types.js";
 import { loadConfig, mergeCliConfig } from "./config.js";
 
-const VERSION = "1.5.1";
+const VERSION = "1.5.2";
 const BRAND = "codesight";
 
 function printHelp() {
@@ -232,44 +232,68 @@ async function installGitHook(root: string, outputDirName: string) {
   console.log(`  Git pre-commit hook installed at .git/hooks/pre-commit`);
 }
 
-async function watchMode(root: string, outputDirName: string, maxDepth: number) {
+async function watchMode(root: string, outputDirName: string, maxDepth: number, userConfig: CodesightConfig = {}) {
   console.log(`  Watching for changes... (Ctrl+C to stop)\n`);
+
+  const WATCH_EXTENSIONS = new Set([
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".py", ".go", ".vue", ".svelte", ".rb", ".ex", ".exs",
+    ".java", ".kt", ".rs", ".php",
+    ".json", ".yaml", ".yml", ".toml", ".env",
+    ".prisma", ".graphql", ".gql",
+  ]);
+
+  const IGNORE_DIRS = new Set([
+    "node_modules", ".git", ".next", ".nuxt", ".svelte-kit",
+    "__pycache__", ".venv", "venv", "dist", "build", "out",
+    ".output", "coverage", ".turbo", ".vercel", ".cache",
+    outputDirName,
+  ]);
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isScanning = false;
+  let changedFiles: string[] = [];
 
   const runScan = async () => {
     if (isScanning) return;
     isScanning = true;
+    const files = [...changedFiles];
+    changedFiles = [];
     try {
-      console.log("\n  Changes detected, re-scanning...\n");
-      await scan(root, outputDirName, maxDepth);
+      const fileList = files.length <= 5 ? files.join(", ") : `${files.length} files`;
+      console.log(`\n  Changes detected (${fileList}), re-scanning...\n`);
+      await scan(root, outputDirName, maxDepth, userConfig);
     } catch (err: any) {
       console.error("  Scan error:", err.message);
     }
     isScanning = false;
   };
 
-  // Use polling approach for cross-platform compatibility
   const { watch } = await import("node:fs");
+  const { extname: ext } = await import("node:path");
+
   const watcher = watch(root, { recursive: true }, (_event, filename) => {
     if (!filename) return;
-    // Skip output directory and hidden files
-    if (filename.startsWith(outputDirName) || filename.startsWith(".git")) return;
-    if (filename.includes("node_modules")) return;
 
+    // Skip ignored directories
+    const parts = filename.split("/");
+    if (parts.some((p) => IGNORE_DIRS.has(p))) return;
+
+    // Only trigger on relevant file extensions
+    const fileExt = ext(filename);
+    if (!WATCH_EXTENSIONS.has(fileExt)) return;
+
+    changedFiles.push(filename);
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(runScan, 500);
   });
 
-  // Keep process alive
   process.on("SIGINT", () => {
     watcher.close();
     console.log("\n  Watch mode stopped.");
     process.exit(0);
   });
 
-  // Wait forever
   await new Promise(() => {});
 }
 
@@ -513,7 +537,7 @@ async function main() {
 
   // Watch mode (blocks)
   if (doWatch) {
-    await watchMode(root, outputDirName, maxDepth);
+    await watchMode(root, outputDirName, maxDepth, config);
   }
 }
 

@@ -569,11 +569,13 @@ jobs:
 
 ## Watch Mode and Git Hook
 
-**Watch mode** re-scans when files change:
+**Watch mode** re-scans automatically when your code changes:
 
 ```bash
 npx codesight --watch
 ```
+
+Only triggers on source and config files (`.ts`, `.js`, `.py`, `.go`, `.prisma`, `.env`, etc.). Ignores `node_modules`, build output, and non-code files. Shows which files changed before each re-scan. Your config (disabled detectors, plugins) is preserved across re-scans.
 
 **Git hook** regenerates context on every commit:
 
