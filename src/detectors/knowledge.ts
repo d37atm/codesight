@@ -157,15 +157,19 @@ function extractOpenQuestions(content: string): string[] {
       t.length <= 200 &&
       !/[^\x00-\x7F]/.test(t) // skip non-ASCII (non-English questions)
     ) {
-      t = cleanWikilinks(t.replace(/^[-*]\s*/, ""));
+      // Strip marker prefixes so "QUESTION: Why X?" and "Why X?" deduplicate correctly
+      t = cleanWikilinks(t.replace(/^[-*]\s*/, "").replace(/^(?:TODO|QUESTION|OPEN|FIXME):\s*/i, ""));
       if (t.length >= 15 && t.length <= 160) questions.push(t);
     }
   }
 
-  // TODO / QUESTION markers
+  // TODO / QUESTION markers — only add if not already captured by the line loop above
   const todoRe = /(?:TODO|QUESTION|OPEN|FIXME):\s*([^\n]{10,120})/gi;
   let m: RegExpExecArray | null;
-  while ((m = todoRe.exec(content)) !== null) questions.push(cleanWikilinks(m[1].trim()));
+  while ((m = todoRe.exec(content)) !== null) {
+    const q = cleanWikilinks(m[1].trim());
+    if (!q.endsWith("?")) questions.push(q); // ?-ending already captured above
+  }
 
   return [...new Set(questions)].slice(0, 5);
 }
@@ -267,6 +271,8 @@ function extractSummary(content: string, maxLen = 160): string {
     if (/^```/.test(t)) continue;          // code fences
     if (/^\|/.test(t)) continue;           // tables
     if (/^<!--/.test(t)) continue;         // HTML comments
+    // Skip field-label lines: "Attendees: X, Y" / "Status: accepted" / "Date: ..."
+    if (/^[A-Za-z][a-zA-Z ]{0,20}:\s+\S/.test(t) && !/[.!?]/.test(t.slice(0, 60))) continue;
     // Strip leading list/blockquote markers and clean wikilinks
     t = t.replace(/^[-*>]\s+/, "").replace(/^\d+\.\s+/, "");
     t = cleanWikilinks(t);
@@ -322,12 +328,19 @@ export async function detectKnowledge(
     const people = extractPeople(content);
     const summary = extractSummary(content);
 
-    // Collect H2 themes across notes — ASCII only to avoid non-English headers
+    // Collect H2 themes across notes — ASCII only, skip boilerplate template headers
+    const THEME_BLOCKLIST = new Set([
+      "action items", "next steps", "attendees", "participants", "agenda", "background",
+      "context", "consequences", "status", "summary", "overview", "notes", "details",
+      "references", "links", "resources", "related", "conclusion", "timeline", "risks",
+      "decision", "decisions", "rationale", "motivation", "options", "alternatives",
+      "follow up", "follow-up", "open issues", "blockers", "updates", "discussion",
+    ]);
     for (const m of content.matchAll(/^##\s+(.+)/gm)) {
       const raw = m[1].trim();
       if (/[^\x00-\x7F]/.test(raw)) continue; // skip non-ASCII (other languages)
       const theme = raw.toLowerCase().replace(/[^a-z0-9 -]/g, "").trim();
-      if (theme.length >= 3 && theme.length <= 40) {
+      if (theme.length >= 3 && theme.length <= 40 && !THEME_BLOCKLIST.has(theme)) {
         themeMap.set(theme, (themeMap.get(theme) || 0) + 1);
       }
     }

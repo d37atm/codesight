@@ -592,10 +592,11 @@ export function formatKnowledge(map: KnowledgeMap, projectName: string, version:
     const parts: string[] = [];
     const topThemes = recurringThemes.slice(0, 4).join(", ");
     const topDecision = decisions[0] ? decisions[0].replace(/^\[\d{4}-\d{2}-\d{2}\]\s*/, "") : null;
+    const noteWord = notes.length === 1 ? "note" : "notes";
     if (dateRange) {
-      parts.push(`This knowledge base spans ${dateRange.from} to ${dateRange.to} (${notes.length} notes).`);
+      parts.push(`This knowledge base spans ${dateRange.from} to ${dateRange.to} (${notes.length} ${noteWord}).`);
     } else {
-      parts.push(`This knowledge base has ${notes.length} notes.`);
+      parts.push(`This knowledge base has ${notes.length} ${noteWord}.`);
     }
     if (topThemes) parts.push(`Key topics: ${topThemes}.`);
     if (topDecision) {
