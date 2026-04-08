@@ -267,7 +267,7 @@ export async function detectWebSocketRoutes(
   const routes: RouteInfo[] = [];
 
   const relevantFiles = files.filter(
-    (f) => /\.(ts|tsx|js|jsx|mjs|py)$/.test(f) && !f.includes("node_modules")
+    (f) => /\.(ts|tsx|js|jsx|mjs|py|rb)$/.test(f) && !f.includes("node_modules")
   );
 
   for (const file of relevantFiles) {
@@ -277,7 +277,8 @@ export async function detectWebSocketRoutes(
       !content.includes("socket") &&
       !content.includes("WebSocket") &&
       !content.includes("ws.") &&
-      !content.includes("channel")
+      !content.includes("channel") &&
+      !content.includes("Channel")
     ) continue;
 
     const rel = relative(project.root, file).replace(/\\/g, "/");
@@ -326,6 +327,21 @@ export async function detectWebSocketRoutes(
         framework: "websocket",
         confidence: "regex",
       });
+    }
+
+    // Rails ActionCable: class RoomChannel < ApplicationCable::Channel
+    if (file.endsWith(".rb")) {
+      const acPat = /class\s+(\w+Channel)\s*<\s*(?:\w+::)*Channel/g;
+      while ((m = acPat.exec(content)) !== null) {
+        routes.push({
+          method: "WS",
+          path: m[1].replace(/Channel$/, "").replace(/([A-Z])/g, (_, c, i) => (i > 0 ? "_" : "") + c.toLowerCase()),
+          file: rel,
+          tags: ["ActionCable"],
+          framework: "websocket",
+          confidence: "regex",
+        });
+      }
     }
   }
 

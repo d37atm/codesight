@@ -24,7 +24,7 @@ import type { ScanResult } from "./types.js";
 import type { CodesightConfig } from "./types.js";
 import { loadConfig, mergeCliConfig } from "./config.js";
 
-const VERSION = "1.9.0";
+const VERSION = "1.9.1";
 const BRAND = "codesight";
 
 function printHelp() {

@@ -310,75 +310,112 @@ FIELD_TYPES = {
 RELATION_FIELDS = {'ForeignKey', 'OneToOneField', 'ManyToManyField'}
 AUDIT = {'created_at','updated_at','deleted_at','createdAt','updatedAt','deletedAt'}
 
+def get_base_names(node):
+    names = []
+    for b in node.bases:
+        if isinstance(b, ast.Name):
+            names.append(b.id)
+        elif isinstance(b, ast.Attribute):
+            names.append(b.attr)
+    return names
+
+def is_abstract_model(node):
+    for item in node.body:
+        if isinstance(item, ast.ClassDef) and item.name == 'Meta':
+            for stmt in item.body:
+                if isinstance(stmt, ast.Assign):
+                    for t in stmt.targets:
+                        if isinstance(t, ast.Name) and t.id == 'abstract':
+                            if isinstance(stmt.value, ast.Constant) and stmt.value.value:
+                                return True
+    return False
+
+def extract_fields(node):
+    fields = []
+    relations = []
+    for item in node.body:
+        if not isinstance(item, ast.Assign):
+            continue
+        for target in item.targets:
+            if not isinstance(target, ast.Name):
+                continue
+            fname = target.id
+            if fname.startswith('_') or fname in AUDIT:
+                continue
+            if not isinstance(item.value, ast.Call):
+                continue
+            call = item.value
+            fc = ''
+            if isinstance(call.func, ast.Name):
+                fc = call.func.id
+            elif isinstance(call.func, ast.Attribute):
+                fc = call.func.attr
+            if not fc:
+                continue
+            if fc in RELATION_FIELDS:
+                tgt = ''
+                if call.args:
+                    a = call.args[0]
+                    if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                        tgt = a.value.split('.')[-1]
+                    elif isinstance(a, ast.Name):
+                        tgt = a.id
+                rel_type = 'many' if fc == 'ManyToManyField' else 'one'
+                relations.append({'name': fname, 'target': tgt, 'type': rel_type})
+                if fc in ('ForeignKey', 'OneToOneField'):
+                    fields.append({'name': fname + '_id', 'type': 'integer', 'flags': ['fk']})
+            elif fc in FIELD_TYPES:
+                ftype = FIELD_TYPES[fc]
+                flags = []
+                for kw in call.keywords:
+                    if kw.arg == 'primary_key' and isinstance(kw.value, ast.Constant) and kw.value.value:
+                        flags.append('pk')
+                    elif kw.arg == 'unique' and isinstance(kw.value, ast.Constant) and kw.value.value:
+                        flags.append('unique')
+                    elif kw.arg == 'null' and isinstance(kw.value, ast.Constant) and kw.value.value:
+                        flags.append('nullable')
+                    elif kw.arg == 'default':
+                        flags.append('default')
+                fields.append({'name': fname, 'type': ftype, 'flags': flags})
+    return fields, relations
+
 def extract_django_models(source, filename):
     try:
         tree = ast.parse(source, filename)
     except SyntaxError:
         return []
 
-    models = []
+    # Collect all class definitions in this file
+    all_classes = {}
     for node in ast.walk(tree):
-        if not isinstance(node, ast.ClassDef):
+        if isinstance(node, ast.ClassDef):
+            all_classes[node.name] = node
+
+    # Expand the set of known Django model classes transitively.
+    # Start from 'Model' (covers models.Model, db.Model, etc.) then propagate.
+    django_classes = {'Model'}
+    changed = True
+    while changed:
+        changed = False
+        for name, node in all_classes.items():
+            if name not in django_classes:
+                if any(b in django_classes for b in get_base_names(node)):
+                    django_classes.add(name)
+                    changed = True
+
+    models = []
+    for name, node in all_classes.items():
+        if name == 'Model':
             continue
-        is_django = any(
-            (isinstance(b, ast.Name) and b.id == 'Model') or
-            (isinstance(b, ast.Attribute) and b.attr == 'Model')
-            for b in node.bases
-        )
-        if not is_django:
+        # Must directly inherit from a known django class
+        if not any(b in django_classes for b in get_base_names(node)):
             continue
-
-        fields = []
-        relations = []
-
-        for item in node.body:
-            if not isinstance(item, ast.Assign):
-                continue
-            for target in item.targets:
-                if not isinstance(target, ast.Name):
-                    continue
-                fname = target.id
-                if fname.startswith('_') or fname in AUDIT:
-                    continue
-                if not isinstance(item.value, ast.Call):
-                    continue
-                call = item.value
-                fc = ''
-                if isinstance(call.func, ast.Name):
-                    fc = call.func.id
-                elif isinstance(call.func, ast.Attribute):
-                    fc = call.func.attr
-                if not fc:
-                    continue
-
-                if fc in RELATION_FIELDS:
-                    tgt = ''
-                    if call.args:
-                        a = call.args[0]
-                        if isinstance(a, ast.Constant) and isinstance(a.value, str):
-                            tgt = a.value.split('.')[-1]
-                        elif isinstance(a, ast.Name):
-                            tgt = a.id
-                    rel_type = 'many' if fc == 'ManyToManyField' else 'one'
-                    relations.append({'name': fname, 'target': tgt, 'type': rel_type})
-                    if fc in ('ForeignKey', 'OneToOneField'):
-                        fields.append({'name': fname + '_id', 'type': 'integer', 'flags': ['fk']})
-                elif fc in FIELD_TYPES:
-                    ftype = FIELD_TYPES[fc]
-                    flags = []
-                    for kw in call.keywords:
-                        if kw.arg == 'primary_key' and isinstance(kw.value, ast.Constant) and kw.value.value:
-                            flags.append('pk')
-                        elif kw.arg == 'unique' and isinstance(kw.value, ast.Constant) and kw.value.value:
-                            flags.append('unique')
-                        elif kw.arg == 'null' and isinstance(kw.value, ast.Constant) and kw.value.value:
-                            flags.append('nullable')
-                        elif kw.arg == 'default':
-                            flags.append('default')
-                    fields.append({'name': fname, 'type': ftype, 'flags': flags})
-
+        # Skip abstract base models (they have no table)
+        if is_abstract_model(node):
+            continue
+        fields, relations = extract_fields(node)
         if fields or relations:
-            models.append({'name': node.name, 'fields': fields, 'relations': relations})
+            models.append({'name': name, 'fields': fields, 'relations': relations})
 
     return models
 

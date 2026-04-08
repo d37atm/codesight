@@ -1119,8 +1119,9 @@ async function detectRustRoutes(
           framework: "actix",
         });
       }
-      // .route("/path", web::get().to(handler))
-      const routePattern = /\.route\s*\(\s*"([^"]+)"\s*,\s*web::(get|post|put|patch|delete)\s*\(\s*\)/gi;
+      // .route("/path", web::get().to(handler)) or .route("/path", get().to(handler))
+      // Handles both web:: prefix and bare method names; .to(handler) is optional
+      const routePattern = /\.route\s*\(\s*"([^"]+)"\s*,\s*(?:web::)?(get|post|put|patch|delete)\s*\(\s*\)(?:\.to\s*\([^)]*\))?/gi;
       while ((match = routePattern.exec(content)) !== null) {
         routes.push({
           method: match[2].toUpperCase(),
@@ -1510,7 +1511,7 @@ function resolveJSImport(
 /** Python/FastAPI: scan for APIRouter(prefix=...) + include_router() chains */
 function parsePythonPrefixes(
   content: string,
-  entryDir: string,
+  _entryDir: string,
   files: string[],
   project: ProjectInfo,
   prefixMap: Map<string, string>
