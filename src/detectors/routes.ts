@@ -1009,7 +1009,14 @@ async function detectPhoenixRoutes(
   files: string[],
   project: ProjectInfo
 ): Promise<RouteInfo[]> {
-  const routeFiles = files.filter((f) => f.match(/router\.ex$/));
+  // Match `router.ex`, files ending in `_routes.ex` (common split pattern),
+  // and any `.ex` file inside a directory named `router/` (Phoenix submodules
+  // used via `use MyAppWeb.Router.SomeRoutes` macros).
+  const routeFiles = files.filter((f) =>
+    f.match(/router\.ex$/) ||
+    f.match(/_routes\.ex$/) ||
+    f.match(/\/router\/[^/]+\.ex$/)
+  );
   const routes: RouteInfo[] = [];
 
   for (const file of routeFiles) {
