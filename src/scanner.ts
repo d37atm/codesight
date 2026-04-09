@@ -33,6 +33,9 @@ const IGNORE_DIRS = new Set([
   ".cache",
   ".parcel-cache",
   ".gradle",
+  "deps",      // Elixir / mix — equivalent to node_modules for Phoenix/Ecto projects
+  "_build",    // Elixir / mix — compiled .beam artifacts, analogous to `dist`/`build`
+  "target",    // Rust / cargo — build output, compiled binaries + cached deps
 ]);
 
 const CODE_EXTENSIONS = new Set([
