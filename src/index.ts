@@ -273,7 +273,8 @@ async function installGitHook(root: string, outputDirName: string) {
     existingContent = await readFile(hookPath, "utf-8");
   } catch {}
 
-  const hookCommand = `\n# codesight: regenerate AI context\nnpx codesight --wiki -o ${outputDirName}\ngit add ${outputDirName}/\n`;
+  const safeOutputDir = outputDirName.replace(/[^a-zA-Z0-9._-]/g, "");
+  const hookCommand = `\n# codesight: regenerate AI context\nnpx codesight --wiki -o ${safeOutputDir}\ngit add ${safeOutputDir}/\n`;
 
   if (existingContent.includes("codesight")) {
     console.log("  Git hook already installed.");
@@ -522,8 +523,8 @@ async function main() {
   let sinceFiles: Set<string> | null = null;
   if (doSince) {
     try {
-      const { execSync } = await import("node:child_process");
-      const changed = execSync(`git diff --name-only ${doSince}`, { cwd: root }).toString().trim();
+      const { execFileSync } = await import("node:child_process");
+      const changed = execFileSync("git", ["diff", "--name-only", doSince], { cwd: root }).toString().trim();
       if (changed) {
         sinceFiles = new Set(changed.split("\n").map((f) => f.trim()));
         console.log(`  --since ${doSince}: ${sinceFiles.size} changed files`);
