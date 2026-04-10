@@ -1302,6 +1302,7 @@ async function detectRawHttpRoutes(
           file: rel,
           tags: fileTags,
           framework: "raw-http",
+          confidence: "regex",
         });
       }
     }
@@ -1534,38 +1535,58 @@ async function resolveRoutePrefixes(
   files: string[],
   project: ProjectInfo
 ): Promise<RouteInfo[]> {
-  // prefixMap: relativeFilePath → mount prefix
-  const prefixMap = new Map<string, string>();
+  // Build mount graph by scanning ALL source files (not just entry points).
+  // This handles multi-level routing: app.ts → routes.ts → auth.ts
+  // mountEdges: targetFile → { prefix, mountedBy }
+  const mountEdges = new Map<string, { prefix: string; mountedBy: string }>();
 
-  // Entry point files where mount registrations live
-  const wsNames = project.workspaces.map(w => w.path.replace(/\\/g, "/"));
-  const entryFiles = files.filter(f => {
-    const rel = relative(project.root, f).replace(/\\/g, "/");
-    return (
-      /^(?:src\/)?(?:index|server|app|main)\.(ts|js|mjs|py)$/.test(rel) ||
-      /^apps\/[^/]+\/(?:src\/)?(?:index|server|app|main)\.(ts|js|mjs)$/.test(rel) ||
-      /^backend\/(?:server|app|main)\.py$/.test(rel) ||
-      // Monorepo workspace entry points (e.g. api/src/app.ts)
-      wsNames.some(ws => new RegExp(`^${ws}/(?:src/)?(?:index|server|app|main)\\.(ts|js|mjs)$`).test(rel))
-    );
-  });
+  const sourceFiles = files.filter(f => f.match(/\.(ts|js|mjs|cjs|py)$/));
 
-  for (const entryFile of entryFiles) {
-    const content = await readFileSafe(entryFile);
-    const entryRel = relative(project.root, entryFile).replace(/\\/g, "/");
-    const entryDir = entryRel.includes("/") ? entryRel.split("/").slice(0, -1).join("/") : "";
+  for (const file of sourceFiles) {
+    const content = await readFileSafe(file);
+    if (!content) continue;
 
-    if (entryFile.endsWith(".py")) {
-      parsePythonPrefixes(content, entryDir, files, project, prefixMap);
+    const rel = relative(project.root, file).replace(/\\/g, "/");
+    const dir = rel.includes("/") ? rel.split("/").slice(0, -1).join("/") : "";
+
+    if (file.endsWith(".py")) {
+      if (content.includes("include_router")) {
+        parsePythonMountsToGraph(content, dir, files, project, mountEdges, rel);
+      }
     } else {
-      parseJSPrefixes(content, entryDir, files, project, prefixMap);
+      if (content.includes(".route(") || content.includes(".use(")) {
+        parseJSMountsToGraph(content, dir, files, project, mountEdges, rel);
+      }
     }
   }
 
-  if (prefixMap.size === 0) return routes;
+  if (mountEdges.size === 0) return routes;
+
+  // Resolve full prefix for each file by walking up the mount graph.
+  // Handles chaining: if app.ts mounts routes.ts at /api, and routes.ts
+  // mounts auth.ts at /auth, auth.ts routes get /api/auth prefix.
+  const resolvedCache = new Map<string, string>();
+
+  function resolveFullPrefix(file: string, visited: Set<string>): string {
+    if (resolvedCache.has(file)) return resolvedCache.get(file)!;
+    if (visited.has(file)) return ""; // cycle protection
+    visited.add(file);
+
+    const edge = mountEdges.get(file);
+    if (!edge) {
+      resolvedCache.set(file, "");
+      return "";
+    }
+
+    const parentPrefix = resolveFullPrefix(edge.mountedBy, new Set(visited));
+    const full = (parentPrefix + edge.prefix).replace(/\/\//g, "/");
+    resolvedCache.set(file, full);
+    return full;
+  }
 
   return routes.map(route => {
-    const prefix = prefixMap.get(route.file.replace(/\\/g, "/"));
+    const routeFile = route.file.replace(/\\/g, "/");
+    const prefix = resolveFullPrefix(routeFile, new Set());
     if (!prefix || prefix === "/") return route;
     // Don't double-prefix if path already starts with it
     if (route.path.startsWith(prefix + "/") || route.path === prefix) return route;
@@ -1575,13 +1596,14 @@ async function resolveRoutePrefixes(
   });
 }
 
-/** TypeScript/JavaScript: scan for app.route("/prefix", varName) */
-function parseJSPrefixes(
+/** TypeScript/JavaScript: scan ALL files for .route()/.use() mount registrations */
+function parseJSMountsToGraph(
   content: string,
   entryDir: string,
   files: string[],
   project: ProjectInfo,
-  prefixMap: Map<string, string>
+  mountEdges: Map<string, { prefix: string; mountedBy: string }>,
+  sourceFile: string
 ): void {
   // Map: varName → relative source file
   const importMap = new Map<string, string>();
@@ -1606,14 +1628,23 @@ function parseJSPrefixes(
     if (resolved) importMap.set(m[1], resolved);
   }
 
+  // CommonJS: const authRoutes = require("./routes/auth")
+  const requireRe = /(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((m = requireRe.exec(content)) !== null) {
+    const resolved = resolveJSImport(m[2], entryDir, files, project);
+    if (resolved) importMap.set(m[1], resolved);
+  }
+
   // app.route("/prefix", varName) or app.use("/prefix", varName)
   const mountRe = /\.\s*(?:route|use)\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*(\w+)/g;
   while ((m = mountRe.exec(content)) !== null) {
     const prefix = m[1];
     const varName = m[2];
     if (!prefix || prefix === "/" || prefix === "*") continue;
-    const sourceFile = importMap.get(varName);
-    if (sourceFile) prefixMap.set(sourceFile, prefix);
+    const targetFile = importMap.get(varName);
+    if (targetFile && !mountEdges.has(targetFile)) {
+      mountEdges.set(targetFile, { prefix, mountedBy: sourceFile });
+    }
   }
 }
 
@@ -1653,12 +1684,13 @@ function resolveJSImport(
 }
 
 /** Python/FastAPI: scan for APIRouter(prefix=...) + include_router() chains */
-function parsePythonPrefixes(
+function parsePythonMountsToGraph(
   content: string,
   _entryDir: string,
   files: string[],
   project: ProjectInfo,
-  prefixMap: Map<string, string>
+  mountEdges: Map<string, { prefix: string; mountedBy: string }>,
+  sourceFile: string
 ): void {
   // Step 1: Build alias map: "auth_router" → "backend/routes/auth.py"
   //   from routes.auth import router as auth_router
@@ -1668,9 +1700,7 @@ function parsePythonPrefixes(
   while ((m = aliasRe.exec(content)) !== null) {
     const moduleDots = m[1];
     const alias = m[2];
-    // Convert dotted module to file path (relative or absolute)
     const modPath = moduleDots.replace(/\./g, "/");
-    // Try to find the file matching this module path
     const hit = files.find(f => {
       const rel = f.replace(/\\/g, "/");
       return rel.endsWith(`/${modPath}.py`) || rel.endsWith(`${modPath}.py`);
@@ -1704,9 +1734,9 @@ function parsePythonPrefixes(
     const parentPrefix = routerPrefixes.get(parentVar) || "";
     const fullPrefix = parentPrefix + extraPrefix;
 
-    const sourceFile = aliasMap.get(childVar);
-    if (sourceFile && fullPrefix) {
-      prefixMap.set(sourceFile, fullPrefix);
+    const targetFile = aliasMap.get(childVar);
+    if (targetFile && fullPrefix && !mountEdges.has(targetFile)) {
+      mountEdges.set(targetFile, { prefix: fullPrefix, mountedBy: sourceFile });
     }
   }
 }

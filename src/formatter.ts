@@ -137,11 +137,12 @@ function formatRoutes(result: ScanResult): string {
         const testMark = result.testCoverage?.testedRoutes.includes(`${route.method}:${route.path}`) ? " ✓" : "";
         const tags = route.tags.length > 0 ? ` [${route.tags.join(", ")}]` : "";
         const params = route.params ? ` params(${route.params.join(", ")})` : "";
+        const inferred = route.confidence === "regex" ? " `[inferred]`" : "";
         const contract: string[] = [];
         if (route.requestType) contract.push(`in: ${route.requestType}`);
         if (route.responseType) contract.push(`out: ${route.responseType}`);
         const contractStr = contract.length > 0 ? ` → ${contract.join(", ")}` : "";
-        lines.push(`- \`${route.method}\` \`${route.path}\`${params}${contractStr}${tags}${testMark}`);
+        lines.push(`- \`${route.method}\` \`${route.path}\`${params}${contractStr}${tags}${inferred}${testMark}`);
       }
       lines.push("");
     }
@@ -393,7 +394,9 @@ function formatCombined(
   const eventCount = result.events?.length ?? 0;
   const coveragePct = result.testCoverage?.coveragePercent;
 
-  let routeStr = `${httpRouteCount} routes`;
+  const inferredCount = result.routes.filter(r => r.confidence === "regex").length;
+  const inferredNote = inferredCount > 0 ? ` (${inferredCount} inferred)` : "";
+  let routeStr = `${httpRouteCount} routes${inferredNote}`;
   if (gqlCount > 0) routeStr += ` + ${gqlCount} graphql`;
   if (grpcCount > 0) routeStr += ` + ${grpcCount} rpc`;
   if (wsCount > 0) routeStr += ` + ${wsCount} ws`;
@@ -408,6 +411,8 @@ function formatCombined(
   // Round to nearest 100 to keep output deterministic across runs (avoids git conflicts in worktrees)
   const roundTo100 = (n: number) => Math.round(n / 100) * 100;
   lines.push(`> **Token savings:** this file is ~${roundTo100(ts.outputTokens).toLocaleString()} tokens. Without it, AI exploration would cost ~${roundTo100(ts.estimatedExplorationTokens).toLocaleString()} tokens. **Saves ~${roundTo100(ts.saved).toLocaleString()} tokens per conversation.**`);
+  const scanTime = new Date().toISOString().slice(0, 16).replace("T", " ");
+  lines.push(`> **Last scanned:** ${scanTime} — re-run after significant changes`);
   lines.push("");
   lines.push("---");
   lines.push("");

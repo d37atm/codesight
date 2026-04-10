@@ -934,7 +934,7 @@ async function getPythonDeps(root: string): Promise<string[]> {
     } catch {}
     try {
       const toml = await readFile(join(dir, "pyproject.toml"), "utf-8");
-      // Find [project] section then locate dependencies = [...]
+      // PEP 621: [project] dependencies = [...]
       // Use bracket counting to handle packages with extras like django[bcrypt]
       const projectIdx = toml.indexOf("[project]");
       if (projectIdx >= 0) {
@@ -958,6 +958,21 @@ async function getPythonDeps(root: string): Promise<string[]> {
           for (const m of depsContent.matchAll(/"([^"]+)"/g)) {
             const name = m[1].split(/[>=<\[!~;]/)[0].trim().toLowerCase();
             if (name && !deps.includes(name)) deps.push(name);
+          }
+        }
+      }
+      // Poetry: [tool.poetry.dependencies] — key = "version" pairs
+      const poetryIdx = toml.indexOf("[tool.poetry.dependencies]");
+      if (poetryIdx >= 0) {
+        const afterPoetry = toml.slice(poetryIdx + "[tool.poetry.dependencies]".length);
+        for (const line of afterPoetry.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("[")) break; // next section
+          if (!trimmed || trimmed.startsWith("#")) continue;
+          const eqIdx = trimmed.indexOf("=");
+          if (eqIdx > 0) {
+            const name = trimmed.slice(0, eqIdx).trim().toLowerCase().replace(/_/g, "-");
+            if (name && name !== "python") deps.push(name);
           }
         }
       }
