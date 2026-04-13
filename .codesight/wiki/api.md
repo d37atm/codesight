@@ -6,7 +6,7 @@ The Api subsystem handles **1 routes** and touches: auth, db, cache, queue, emai
 
 ## Routes
 
-- `ALL` `/api` [auth, db, cache, queue, email, payment, upload, ai]
+- `ALL` `/api` [auth, db, cache, queue, email, payment, upload, ai] `[inferred]`
   `src/detectors/routes.ts`
 
 ## High-Impact Files

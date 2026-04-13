@@ -1,9 +1,9 @@
 # Routes
 
-- `ALL` `/path` [auth, db, cache, queue, email, payment, upload, ai]
-- `ALL` `/api` [auth, db, cache, queue, email, payment, upload, ai]
-- `ALL` `/health` [auth, db] ✓
-- `GET` `/api/users` [auth, db] ✓
+- `ALL` `/path` [auth, db, cache, queue, email, payment, upload, ai] `[inferred]`
+- `ALL` `/api` [auth, db, cache, queue, email, payment, upload, ai] `[inferred]`
+- `ALL` `/health` [auth, db] `[inferred]` ✓
+- `GET` `/api/users` [auth, db] `[inferred]` ✓
 
 ## GraphQL
 

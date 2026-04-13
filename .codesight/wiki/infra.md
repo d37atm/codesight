@@ -6,7 +6,7 @@ The Infra subsystem handles **1 routes** and touches: auth, db.
 
 ## Routes
 
-- `ALL` `/health` [auth, db]
+- `ALL` `/health` [auth, db] `[inferred]`
   `tests/detectors.test.ts`
 
 ## Source Files

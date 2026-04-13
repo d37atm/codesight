@@ -6,7 +6,7 @@
 
 ## Scale
 
-8 API routes · 5 middleware layers · 6 environment variables
+8 API routes · 35 library files · 5 middleware layers · 6 environment variables
 
 ## Subsystems
 
@@ -15,6 +15,8 @@
 - **[Path](./path.md)** — 1 routes — touches: auth, db, cache, queue, email
 - **[Infra](./infra.md)** — 1 routes — touches: auth, db
 - **[Api](./api.md)** — 1 routes — touches: auth, db, cache, queue, email
+
+**Libraries:** 35 files — see [libraries.md](./libraries.md)
 
 ## High-Impact Files
 
@@ -36,4 +38,4 @@ Changes to these files have the widest blast radius across the codebase:
 - `VITE_VAR_NAME` — `src/detectors/config.ts`
 
 ---
-_Back to [index.md](./index.md) · Generated 2026-04-12_
+_Back to [index.md](./index.md) · Generated 2026-04-13_

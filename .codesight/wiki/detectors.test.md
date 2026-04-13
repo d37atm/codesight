@@ -6,7 +6,7 @@ The Detectors.test subsystem handles **1 routes** and touches: auth, db.
 
 ## Routes
 
-- `GET` `/api/users` [auth, db]
+- `GET` `/api/users` [auth, db] `[inferred]`
   `tests/detectors.test.ts`
 
 ## Source Files
