@@ -59,6 +59,18 @@ function domainFromFile(file: string): string | null {
   return null;
 }
 
+/**
+ * Sanitize a string for safe use as a filename on all platforms (Windows is strictest).
+ * Replaces `<>:"/\|?*` and control chars with `-`. Collapses runs and trims edges.
+ */
+function safeFilename(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .toLowerCase() || "section";
+}
+
 function detectDomains(routes: RouteInfo[]): Domain[] {
   const buckets = new Map<string, RouteInfo[]>();
 
@@ -67,8 +79,12 @@ function detectDomains(routes: RouteInfo[]): Domain[] {
 
     let domain: string;
 
+    // ── tRPC: group by first dotted path segment so procedures never bleed into HTTP domains ──
+    if (route.framework === "trpc") {
+      domain = route.path.split(".")[0] || "procedures";
+    }
     // ── Infra: health/monitoring/low-level transport endpoints ──────────────
-    if (
+    else if (
       path === "/" ||
       /^\/(health|healthz|metrics|status|ping|ready|readyz|live|livez|mcp|sse|messages)(\/|$)/.test(path)
     ) {
@@ -98,10 +114,18 @@ function detectDomains(routes: RouteInfo[]): Domain[] {
       if (fileDomain) {
         domain = fileDomain;
       } else {
-        // Path segment grouping: first non-param, non-version segment
+        // Path segment grouping: first non-param, non-version segment.
+        // Route param syntaxes covered: Express `:id`, OpenAPI `{id}`, Flask `<id>` / `<string:id>`.
         const segments = route.path
           .split("/")
-          .filter((p) => p && !p.startsWith(":") && !p.startsWith("{") && !["api", "v1", "v2", "v3"].includes(p));
+          .filter(
+            (p) =>
+              p &&
+              !p.startsWith(":") &&
+              !p.startsWith("{") &&
+              !p.startsWith("<") &&
+              !["api", "v1", "v2", "v3"].includes(p)
+          );
         domain = segments[0]?.replace(/_/g, "-") || "api";
       }
     }
@@ -163,7 +187,8 @@ function overviewArticle(result: ScanResult): string {
       const allTags = [...new Set(d.routes.flatMap((r) => r.tags))].slice(0, 5);
       const tagStr = allTags.length > 0 ? ` — touches: ${allTags.join(", ")}` : "";
       const title = d.name.charAt(0).toUpperCase() + d.name.slice(1);
-      lines.push(`- **[${title}](./${d.name}.md)** — ${d.routes.length} routes${tagStr}`);
+      const slug = safeFilename(d.name);
+      lines.push(`- **[${title}](./${slug}.md)** — ${d.routes.length} routes${tagStr}`);
     }
     lines.push("");
   }
@@ -641,9 +666,16 @@ export async function generateWiki(
 
   // domain articles from routes
   const domains = detectDomains(result.routes);
+  const usedSlugs = new Set<string>(articles);
   for (const domain of domains) {
     const content = domainArticle(domain, result, missingFiles);
-    const filename = `${domain.name}.md`;
+    let slug = safeFilename(domain.name);
+    let filename = `${slug}.md`;
+    let n = 2;
+    while (usedSlugs.has(filename)) {
+      filename = `${slug}-${n++}.md`;
+    }
+    usedSlugs.add(filename);
     await writeFile(join(wikiDir, filename), content);
     articles.push(filename);
     totalChars += content.length;

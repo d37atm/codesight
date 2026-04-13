@@ -3,7 +3,7 @@ import { readFileSafe } from "../scanner.js";
 import { loadTypeScript } from "../ast/loader.js";
 import { extractDrizzleSchemaAST, extractTypeORMSchemaAST } from "../ast/extract-schema.js";
 import { extractSQLAlchemyAST, extractDjangoModelsAST, extractSQLModelAST } from "../ast/extract-python.js";
-import { extractGORMModelsStructured } from "../ast/extract-go.js";
+import { extractGORMModelsStructured, extractEntSchemasStructured } from "../ast/extract-go.js";
 import { extractEloquentModels } from "../ast/extract-php.js";
 import { extractEntityFrameworkModels } from "../ast/extract-csharp.js";
 import { extractRoomEntities } from "../ast/extract-android.js";
@@ -40,6 +40,9 @@ export async function detectSchemas(
         break;
       case "gorm":
         models.push(...(await detectGORMSchemas(files, project)));
+        break;
+      case "ent":
+        models.push(...(await detectEntSchemas(files, project)));
         break;
       case "activerecord":
         models.push(...(await detectActiveRecordSchemas(project)));
@@ -440,6 +443,28 @@ async function detectGORMSchemas(
 
     const rel = relative(_project.root, file);
     const structModels = extractGORMModelsStructured(rel, content);
+    models.push(...structModels);
+  }
+
+  return models;
+}
+
+// --- Ent (Go) ---
+async function detectEntSchemas(
+  files: string[],
+  _project: ProjectInfo
+): Promise<SchemaModel[]> {
+  const goFiles = files.filter(
+    (f) => f.endsWith(".go") && (f.includes("/ent/schema/") || f.includes("/schema/"))
+  );
+  const models: SchemaModel[] = [];
+
+  for (const file of goFiles) {
+    const content = await readFileSafe(file);
+    if (!content.includes("ent.Schema")) continue;
+
+    const rel = relative(_project.root, file);
+    const structModels = extractEntSchemasStructured(rel, content);
     models.push(...structModels);
   }
 

@@ -87,6 +87,8 @@ export async function detectComponents(
       return detectFlutterComponents(files, project);
     case "jetpack-compose":
       return detectComposeComponentsFromFiles(files, project);
+    case "angular":
+      return detectAngularComponents(files, project);
     default: {
       // SwiftUI: no componentFramework flag — detect if swiftui/vapor framework present
       if (
@@ -395,6 +397,68 @@ async function detectComposeComponentsFromFiles(
     if (!content || !content.includes("@Composable")) continue;
     const rel = relative(project.root, file);
     components.push(...extractComposeComponents(rel, content));
+  }
+
+  return components;
+}
+
+// --- Angular Components ---
+async function detectAngularComponents(
+  files: string[],
+  project: ProjectInfo
+): Promise<ComponentInfo[]> {
+  const tsFiles = files.filter(
+    (f) =>
+      f.endsWith(".ts") &&
+      !f.includes("node_modules") &&
+      !f.endsWith(".spec.ts") &&
+      !f.endsWith(".d.ts")
+  );
+  const components: ComponentInfo[] = [];
+
+  for (const file of tsFiles) {
+    const content = await readFileSafe(file);
+    if (!content || !content.includes("@Component")) continue;
+
+    const rel = relative(project.root, file);
+
+    // Class name
+    const classMatch = content.match(/@Component[\s\S]*?class\s+(\w+)/);
+    if (!classMatch) continue;
+    const name = classMatch[1];
+
+    // @Input() decorated properties — handles:
+    //   @Input()                 propName: T
+    //   @Input('alias')          propName: T
+    //   @Input({ required: true }) propName: T
+    // Also signal-based inputs (Angular 17+):
+    //   propName = input<T>()
+    //   propName = input.required<T>()
+    const props: string[] = [];
+
+    const decoratorInputPattern = /@Input\s*\([^)]*\)\s+(?:\w+\s+)*(\w+)\s*[!?]?\s*:/g;
+    let m: RegExpExecArray | null;
+    while ((m = decoratorInputPattern.exec(content)) !== null) {
+      if (!props.includes(m[1])) props.push(m[1]);
+    }
+
+    // Signal inputs: `propName = input(...)` or `propName = input.required(...)`
+    const signalInputPattern = /\b(\w+)\s*=\s*input(?:\.required)?\s*(?:<[^>]*>)?\s*\(/g;
+    while ((m = signalInputPattern.exec(content)) !== null) {
+      const propName = m[1];
+      // Exclude common false positives that start with lowercase verbs
+      if (!["const", "let", "var", "return", "await"].includes(propName) && !props.includes(propName)) {
+        props.push(propName);
+      }
+    }
+
+    components.push({
+      name,
+      file: rel,
+      props: props.slice(0, 10),
+      isClient: true,
+      isServer: false,
+    });
   }
 
   return components;

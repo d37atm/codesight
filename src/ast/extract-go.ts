@@ -348,6 +348,95 @@ export function extractGORMModelsStructured(
   return models;
 }
 
+// ─── Ent Schema Extraction ───
+
+export function extractEntSchemasStructured(
+  _filePath: string,
+  content: string
+): SchemaModel[] {
+  const models: SchemaModel[] = [];
+
+  const structPattern = /type\s+(\w+)\s+struct\s*\{\s*ent\.Schema\s*\}/g;
+  let structMatch;
+
+  while ((structMatch = structPattern.exec(content)) !== null) {
+    const name = structMatch[1];
+    const fields: SchemaField[] = [];
+    const relations: string[] = [];
+
+    const fieldsBlockMatch = content.match(
+      new RegExp(`func\\s*\\(${name}\\)\\s*Fields\\s*\\(\\)\\s*\\[\\]ent\\.Field\\s*\\{`)
+    );
+    if (fieldsBlockMatch && fieldsBlockMatch.index != null) {
+      const bodyStart = fieldsBlockMatch.index + fieldsBlockMatch[0].length;
+      const body = extractBraceBlock(content, bodyStart);
+      if (body) {
+        const fieldPattern = /field\.(\w+)\("(\w+)"\)/g;
+        let fm;
+        while ((fm = fieldPattern.exec(body)) !== null) {
+          const fieldType = fm[1].toLowerCase();
+          const fieldName = fm[2];
+          const lineEnd = body.indexOf("\n", fm.index);
+          const fieldLine = body.slice(fm.index, lineEnd > -1 ? lineEnd : undefined);
+
+          const flags: string[] = [];
+          if (fieldLine.includes(".Optional()")) flags.push("nullable");
+          if (fieldLine.includes(".Nillable()")) flags.push("nullable");
+          if (fieldLine.includes(".Unique()")) flags.push("unique");
+          if (fieldLine.includes(".Immutable()")) flags.push("immutable");
+          if (fieldLine.includes(".NotEmpty()")) flags.push("required");
+          if (fieldLine.includes(".Default(")) flags.push("default");
+          if (fieldLine.includes(".Positive()")) flags.push("positive");
+
+          fields.push({ name: fieldName, type: fieldType, flags });
+        }
+
+        const enumFieldPattern = /field\.Enum\("(\w+)"\)\.\s*Values\(([^)]+)\)/g;
+        let em;
+        while ((em = enumFieldPattern.exec(body)) !== null) {
+          const fieldName = em[1];
+          const lineEnd = body.indexOf("\n", em.index);
+          const fieldLine = body.slice(em.index, lineEnd > -1 ? lineEnd : undefined);
+          const flags: string[] = [];
+          if (fieldLine.includes(".Default(")) flags.push("default");
+          if (fieldLine.includes(".Optional()")) flags.push("nullable");
+          fields.push({ name: fieldName, type: "enum", flags });
+        }
+      }
+    }
+
+    const edgesBlockMatch = content.match(
+      new RegExp(`func\\s*\\(${name}\\)\\s*Edges\\s*\\(\\)\\s*\\[\\]ent\\.Edge\\s*\\{`)
+    );
+    if (edgesBlockMatch && edgesBlockMatch.index != null) {
+      const bodyStart = edgesBlockMatch.index + edgesBlockMatch[0].length;
+      const body = extractBraceBlock(content, bodyStart);
+      if (body) {
+        const edgePattern = /edge\.(To|From)\("(\w+)",\s*(\w+)\.Type\)/g;
+        let edgeMatch;
+        while ((edgeMatch = edgePattern.exec(body)) !== null) {
+          const direction = edgeMatch[1].toLowerCase();
+          const edgeName = edgeMatch[2];
+          const targetType = edgeMatch[3];
+          relations.push(`${edgeName} → ${targetType} (${direction})`);
+        }
+      }
+    }
+
+    if (fields.length > 0 || relations.length > 0) {
+      models.push({
+        name,
+        fields,
+        relations,
+        orm: "ent" as any,
+        confidence: "ast",
+      });
+    }
+  }
+
+  return models;
+}
+
 // ─── Helpers ───
 
 /**

@@ -135,6 +135,9 @@ export async function detectRoutes(
       case "android":
         routes.push(...(await detectAndroidRoutes(files, project)));
         break;
+      case "angular":
+        routes.push(...(await detectAngularRoutes(files, project)));
+        break;
     }
   }
 
@@ -1514,6 +1517,75 @@ async function detectAndroidRoutes(
     const rel = relative(project.root, mp).replace(/\\/g, "/");
     routes.push(...extractActivitiesFromManifest(rel, content));
     break;
+  }
+
+  return routes;
+}
+
+// --- Angular ---
+async function detectAngularRoutes(
+  files: string[],
+  project: ProjectInfo
+): Promise<RouteInfo[]> {
+  const tsFiles = files.filter(
+    (f) =>
+      f.endsWith(".ts") &&
+      !f.includes("node_modules") &&
+      !f.endsWith(".spec.ts") &&
+      !f.endsWith(".d.ts")
+  );
+  const routes: RouteInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const file of tsFiles) {
+    // Skip non-routing files: services, components, guards, pipes, directives
+    // all commonly have `path` properties that are not route configs.
+    if (
+      file.endsWith(".service.ts") ||
+      file.endsWith(".component.ts") ||
+      file.endsWith(".guard.ts") ||
+      file.endsWith(".pipe.ts") ||
+      file.endsWith(".directive.ts") ||
+      file.endsWith(".interceptor.ts")
+    )
+      continue;
+
+    const content = await readFileSafe(file);
+    if (!content) continue;
+
+    // Only process files that are actual Angular routing files.
+    // Require a structural signal: forRoot/forChild call, provideRouter call,
+    // `: Routes` type annotation, or a filename that includes "routing" or ".routes."
+    const isRoutingFile =
+      /[/\\].*(?:routing|\.routes)\./i.test(file) ||
+      content.includes("RouterModule.forRoot(") ||
+      content.includes("RouterModule.forChild(") ||
+      content.includes("provideRouter(") ||
+      /:\s*Routes\b/.test(content);
+
+    if (!isRoutingFile) continue;
+
+    const rel = relative(project.root, file).replace(/\\/g, "/");
+    const tags = detectTags(content);
+
+    // Match: { path: 'some/path', ... } entries in route config arrays.
+    // Handles single and double quotes.
+    const pathPattern = /\bpath\s*:\s*['"]([^'"]*)['"]/g;
+    let m: RegExpExecArray | null;
+    while ((m = pathPattern.exec(content)) !== null) {
+      const routePath = `/${m[1]}`.replace(/\/+/g, "/");
+      const key = `GET:${routePath}:${rel}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      routes.push({
+        method: "GET",
+        path: routePath,
+        file: rel,
+        tags,
+        framework: "angular",
+        confidence: "regex",
+      });
+    }
   }
 
   return routes;

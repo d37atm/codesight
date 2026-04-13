@@ -6,7 +6,7 @@ The Path subsystem handles **1 routes** and touches: auth, db, cache, queue, ema
 
 ## Routes
 
-- `ALL` `/path` [auth, db, cache, queue, email, payment, upload, ai]
+- `ALL` `/path` [auth, db, cache, queue, email, payment, upload, ai] `[inferred]`
   `src/detectors/routes.ts`
 
 ## High-Impact Files

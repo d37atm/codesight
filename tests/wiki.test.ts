@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readWikiArticle } from "../dist/generators/wiki.js";
+import { readWikiArticle, generateWiki } from "../dist/generators/wiki.js";
+import { readdir } from "node:fs/promises";
 
 async function createWikiFixture() {
   const root = await mkdtemp(join(tmpdir(), "codesight-wiki-test-"));
@@ -63,6 +64,56 @@ test("readWikiArticle returns null for nonexistent articles", async () => {
   try {
     const missing = await readWikiArticle(outputDir, "does-not-exist");
     assert.equal(missing, null);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("generateWiki sanitizes Flask-style route params out of filenames (issue #27)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codesight-wiki-flask-"));
+  const outputDir = join(root, ".codesight");
+  try {
+    // Minimal ScanResult with a Flask-style route whose first segment is `<string:job-id>`.
+    // Before the fix, this produced a wiki filename containing `<>:` and crashed on Windows.
+    const result = {
+      project: {
+        name: "flask-app",
+        root,
+        language: "Python",
+        frameworks: ["Flask"],
+        orms: [],
+        isMonorepo: false,
+        workspaces: [],
+        componentFramework: "",
+      },
+      routes: [
+        {
+          method: "GET",
+          path: "/<string:job-id>/details",
+          file: "app.py",
+          tags: [],
+          params: ["job-id"],
+          confidence: "ast",
+        },
+      ],
+      schemas: [],
+      components: [],
+      libs: [],
+      middleware: [],
+      config: { envVars: [] },
+      graph: { hotFiles: [] },
+    };
+
+    const { articles, wikiDir } = await generateWiki(result as any, outputDir);
+    const files = await readdir(wikiDir);
+
+    for (const f of files) {
+      assert.ok(
+        !/[<>:"|?*]/.test(f),
+        `filename "${f}" contains filesystem-unsafe characters`
+      );
+    }
+    assert.ok(articles.length > 0, "expected at least one article generated");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

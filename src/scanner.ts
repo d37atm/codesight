@@ -262,6 +262,7 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
       laravel: "php", php: "php",
       actix: "rust", axum: "rust",
       aspnet: "csharp",
+      gin: "go", fiber: "go", echo: "go", chi: "go", "go-net-http": "go",
     };
     const wsLangs = new Set<string>();
     if (language === "typescript" || language === "javascript" || allDeps["react"] || allDeps["typescript"]) {
@@ -271,8 +272,25 @@ export async function detectProject(root: string): Promise<ProjectInfo> {
       const l = FW_LANG[fw];
       if (l) wsLangs.add(l);
     }
-    if (wsLangs.size > 1) language = "mixed";
-    else if (wsLangs.size === 1) language = wsLangs.values().next().value as typeof language;
+    if (wsLangs.size > 1) {
+      if (language !== "mixed" && language !== "javascript" && wsLangs.has(language)) {
+        // detectLanguage already resolved a primary language — keep it
+      } else {
+        language = "mixed";
+      }
+    } else if (wsLangs.size === 1) {
+      language = wsLangs.values().next().value as typeof language;
+    }
+  }
+
+  const jsOnlyFrameworks = new Set<Framework>([
+    "next-app", "next-pages", "hono", "express", "fastify", "koa",
+    "nestjs", "elysia", "adonis", "trpc", "sveltekit", "remix", "nuxt",
+    "raw-http", "angular",
+  ]);
+  const nonJSLangs = new Set(["go", "python", "ruby", "elixir", "java", "kotlin", "rust", "php", "dart", "swift", "csharp"]);
+  if (nonJSLangs.has(language) && frameworks.some((f) => !jsOnlyFrameworks.has(f))) {
+    frameworks = frameworks.filter((f) => !jsOnlyFrameworks.has(f));
   }
 
   return {
@@ -402,6 +420,9 @@ async function detectFrameworks(
   // tRPC
   if (deps["@trpc/server"]) frameworks.push("trpc");
 
+  // Angular
+  if (deps["@angular/core"]) frameworks.push("angular");
+
   // SvelteKit
   if (deps["@sveltejs/kit"]) frameworks.push("sveltekit");
 
@@ -417,13 +438,23 @@ async function detectFrameworks(
   if (pyDeps.includes("fastapi")) frameworks.push("fastapi");
   if (pyDeps.includes("django")) frameworks.push("django");
 
-  // Go frameworks - check go.mod
+  // Go frameworks — require both go.mod dep AND actual import in .go source files.
+  // A dep in go.mod may be transitive or used only for utilities (e.g. go-chi/cors
+  // without chi as a router), so we verify with a quick import grep.
   const goDeps = await getGoDeps(root);
+  const goFwCandidates: { dep: string; importStr: string; fw: Framework }[] = [
+    { dep: "gin-gonic/gin", importStr: `"github.com/gin-gonic/gin"`, fw: "gin" },
+    { dep: "gofiber/fiber", importStr: `"github.com/gofiber/fiber`, fw: "fiber" },
+    { dep: "labstack/echo", importStr: `"github.com/labstack/echo`, fw: "echo" },
+    { dep: "go-chi/chi", importStr: `"github.com/go-chi/chi`, fw: "chi" },
+  ];
+  for (const candidate of goFwCandidates) {
+    if (!goDeps.some((d) => d.includes(candidate.dep))) continue;
+    if (await goImportUsed(root, candidate.importStr)) {
+      frameworks.push(candidate.fw);
+    }
+  }
   if (goDeps.some((d) => d.includes("net/http"))) frameworks.push("go-net-http");
-  if (goDeps.some((d) => d.includes("gin-gonic/gin"))) frameworks.push("gin");
-  if (goDeps.some((d) => d.includes("gofiber/fiber"))) frameworks.push("fiber");
-  if (goDeps.some((d) => d.includes("labstack/echo"))) frameworks.push("echo");
-  if (goDeps.some((d) => d.includes("go-chi/chi"))) frameworks.push("chi");
 
   // Ruby on Rails
   const hasGemfile = await fileExists(join(root, "Gemfile"));
@@ -594,6 +625,7 @@ async function detectORMs(
 
   const goDeps = await getGoDeps(root);
   if (goDeps.some((d) => d.includes("gorm"))) orms.push("gorm");
+  if (goDeps.some((d) => d.includes("entgo.io/ent"))) orms.push("ent");
 
   // Rails ActiveRecord
   const hasGemfile = await fileExists(join(root, "Gemfile"));
@@ -662,6 +694,7 @@ function detectComponentFramework(
   if (deps["svelte"]) return "svelte";
   if (frameworks.includes("flutter")) return "flutter";
   if (frameworks.includes("android")) return "jetpack-compose";
+  if (frameworks.includes("angular")) return "angular";
   return "unknown";
 }
 
@@ -707,7 +740,14 @@ async function detectLanguage(
   if (hasPackageSwift) langs.push("swift");
   if (hasCsproj) langs.push("csharp");
 
-  if (langs.length > 1) return "mixed";
+  if (langs.length > 1) {
+    const primaryManifests: string[] = [
+      "go", "rust", "ruby", "elixir", "swift", "dart", "csharp", "java", "kotlin", "php", "python",
+    ];
+    const primary = langs.filter((l) => primaryManifests.includes(l));
+    if (primary.length === 1) return primary[0] as any;
+    return "mixed";
+  }
   if (langs.length === 1) return langs[0] as any;
 
   // Fallback: detect by file extensions present in root
@@ -851,7 +891,7 @@ async function detectNonJSWorkspace(
     } catch {}
   }
 
-  // Go web frameworks (workspace-level)
+  // Go web frameworks and ORMs (workspace-level)
   const goModPath = join(wsPath, "go.mod");
   if (await fileExists(goModPath)) {
     try {
@@ -861,6 +901,8 @@ async function detectNonJSWorkspace(
       else if (goMod.includes("labstack/echo")) frameworks.push("echo");
       else if (goMod.includes("go-chi/chi")) frameworks.push("chi");
       else frameworks.push("go-net-http");
+      if (goMod.includes("gorm")) orms.push("gorm");
+      if (goMod.includes("entgo.io/ent")) orms.push("ent");
     } catch {}
   }
 
@@ -1042,11 +1084,31 @@ function addPythonDep(rawName: string, deps: string[]): void {
   deps.push(name);
 }
 
-async function getGoDeps(root: string): Promise<string[]> {
+async function goImportUsed(root: string, importStr: string): Promise<boolean> {
+  try {
+    const entries = await readdir(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === "vendor" || entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const fullPath = join(root, entry.name);
+      if (entry.isDirectory()) {
+        if (await goImportUsed(fullPath, importStr)) return true;
+      } else if (entry.name.endsWith(".go")) {
+        try {
+          const content = await readFile(fullPath, "utf-8");
+          if (content.includes(importStr)) return true;
+        } catch {}
+      }
+    }
+  } catch {}
+  return false;
+}
+
+async function getGoDeps(root: string, includeIndirect = false): Promise<string[]> {
   const deps: string[] = [];
   try {
     const gomod = await readFile(join(root, "go.mod"), "utf-8");
     for (const line of gomod.split("\n")) {
+      if (!includeIndirect && line.includes("// indirect")) continue;
       // Block format:  \t github.com/pkg/name v1.2.3
       let match = line.match(/^\s+([\w./-]+)\s+v/);
       if (!match) {
