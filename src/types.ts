@@ -176,6 +176,14 @@ export interface BlastRadiusResult {
   depth: number;
 }
 
+export interface MonorepoConfig {
+  enabled?: boolean;
+  workspaceFile?: string;  // default: "pnpm-workspace.yaml"
+  minFiles?: number;       // default: 10
+  exclude?: string[];      // force-skip by package name
+  include?: string[];      // force-include despite filter
+}
+
 export interface CodesightConfig {
   /** Disable specific detectors: "routes", "schema", "components", "libs", "config", "middleware", "graph", "graphql", "events" */
   disableDetectors?: string[];
@@ -201,6 +209,8 @@ export interface CodesightConfig {
   collapseCrud?: boolean;
   /** Plugin hooks */
   plugins?: CodesightPlugin[];
+  /** Monorepo configuration */
+  monorepo?: MonorepoConfig;
 }
 
 export interface CodesightPlugin {
