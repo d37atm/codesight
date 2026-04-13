@@ -30,9 +30,9 @@
 - `src/ast/extract-csharp.ts` — extractAspNetControllerRoutes, extractAspNetMinimalApiRoutes, extractEntityFrameworkModels, extractCSharpExports
 - `src/ast/extract-components.ts` — extractReactComponentsAST, ComponentName, ComponentName
 - `src/ast/extract-dart.ts` — extractFlutterRoutes, extractFlutterWidgets, extractDartExports
+- `src/ast/extract-go.ts` — extractGoRoutesStructured, extractGORMModelsStructured, extractEntSchemasStructured
 - `src/ast/extract-php.ts` — extractLaravelRoutes, extractEloquentModels, extractPhpExports
 - `src/ast/extract-swift.ts` — extractVaporRoutes, extractSwiftUIViews, extractSwiftExports
-- `src/ast/extract-go.ts` — extractGoRoutesStructured, extractGORMModelsStructured
 - `src/ast/extract-schema.ts` — extractDrizzleSchemaAST, extractTypeORMSchemaAST
 - `src/ast/extract-routes.ts` — extractRoutesAST
 

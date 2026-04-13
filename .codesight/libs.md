@@ -19,7 +19,10 @@
   - function extractFlutterRoutes: (filePath, content, tags) => RouteInfo[]
   - function extractFlutterWidgets: (filePath, content) => ComponentInfo[]
   - function extractDartExports: (content) => ExportItem[]
-- `src/ast/extract-go.ts` — function extractGoRoutesStructured: (filePath, content, framework, tags) => RouteInfo[], function extractGORMModelsStructured: (_filePath, content) => SchemaModel[]
+- `src/ast/extract-go.ts`
+  - function extractGoRoutesStructured: (filePath, content, framework, tags) => RouteInfo[]
+  - function extractGORMModelsStructured: (_filePath, content) => SchemaModel[]
+  - function extractEntSchemasStructured: (_filePath, content) => SchemaModel[]
 - `src/ast/extract-php.ts`
   - function extractLaravelRoutes: (filePath, content, tags) => RouteInfo[]
   - function extractEloquentModels: (_filePath, content) => SchemaModel[]

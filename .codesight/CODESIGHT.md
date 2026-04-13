@@ -4,7 +4,7 @@
 
 > 4 routes (8 inferred) + 1 graphql + 3 ws | 0 models | 0 components | 35 lib files | 6 env vars | 5 middleware | 6 events | 60% test coverage
 > **Token savings:** this file is ~3,300 tokens. Without it, AI exploration would cost ~24,600 tokens. **Saves ~21,300 tokens per conversation.**
-> **Last scanned:** 2026-04-13 16:25 — re-run after significant changes
+> **Last scanned:** 2026-04-13 17:27 — re-run after significant changes
 
 ---
 
@@ -49,7 +49,10 @@
   - function extractFlutterRoutes: (filePath, content, tags) => RouteInfo[]
   - function extractFlutterWidgets: (filePath, content) => ComponentInfo[]
   - function extractDartExports: (content) => ExportItem[]
-- `src/ast/extract-go.ts` — function extractGoRoutesStructured: (filePath, content, framework, tags) => RouteInfo[], function extractGORMModelsStructured: (_filePath, content) => SchemaModel[]
+- `src/ast/extract-go.ts`
+  - function extractGoRoutesStructured: (filePath, content, framework, tags) => RouteInfo[]
+  - function extractGORMModelsStructured: (_filePath, content) => SchemaModel[]
+  - function extractEntSchemasStructured: (_filePath, content) => SchemaModel[]
 - `src/ast/extract-php.ts`
   - function extractLaravelRoutes: (filePath, content, tags) => RouteInfo[]
   - function extractEloquentModels: (_filePath, content) => SchemaModel[]
