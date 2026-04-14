@@ -46,7 +46,10 @@ export async function scan(
       ` ${project.frameworks.length > 0 ? project.frameworks.join(", ") : "generic"} | ${project.orms.length > 0 ? project.orms.join(", ") : "no ORM"} | ${project.language}`
     );
     if (project.isMonorepo) {
-      console.log(`  Monorepo: ${project.workspaces.map((w) => w.name).join(", ")}`);
+      const repoLabel = project.repoType === "meta" ? "Meta-repo"
+        : project.repoType === "microservices" ? "Microservices"
+        : "Monorepo";
+      console.log(`  ${repoLabel}: ${project.workspaces.map((w) => w.name).join(", ")}`);
     }
   }
 
