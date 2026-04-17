@@ -15,6 +15,7 @@ export type Framework =
   | "flask"
   | "fastapi"
   | "django"
+  | "celery"
   | "go-net-http"
   | "gin"
   | "fiber"
@@ -239,7 +240,7 @@ export interface PluginDetectorResult {
 export interface EventInfo {
   name: string;
   type: "queue" | "topic" | "event" | "channel";
-  system: "bullmq" | "kafka" | "redis-pub-sub" | "socket.io" | "eventemitter" | "unknown";
+  system: "bullmq" | "kafka" | "redis-pub-sub" | "socket.io" | "eventemitter" | "celery" | "unknown";
   file: string;
   payloadType?: string;
 }

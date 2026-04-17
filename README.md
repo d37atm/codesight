@@ -491,7 +491,7 @@ The 1.3x multiplier accounts for AI revisiting files during multi-turn conversat
 
 | Category | Supported |
 |---|---|
-| **Routes** | Hono, Express, Fastify, Next.js (App + Pages), Koa, NestJS, tRPC, Elysia, AdonisJS, SvelteKit, Remix, Nuxt, FastAPI, Flask, Django, Go (net/http, Gin, Fiber, Echo, Chi), Rails, Phoenix, Spring Boot, Ktor, Actix, Axum, Laravel, ASP.NET Core (controllers + minimal API), Vapor, Flutter (go_router), raw http.createServer |
+| **Routes** | Hono, Express, Fastify, Next.js (App + Pages), Koa, NestJS, tRPC, Elysia, AdonisJS, SvelteKit, Remix, Nuxt, FastAPI, Flask, Django, Celery, Go (net/http, Gin, Fiber, Echo, Chi), Rails, Phoenix, Spring Boot, Ktor, Actix, Axum, Laravel, ASP.NET Core (controllers + minimal API), Vapor, Flutter (go_router), raw http.createServer |
 | **Schema** | Drizzle, Prisma, TypeORM, Mongoose, Sequelize, SQLAlchemy, Django ORM, ActiveRecord, Ecto, Eloquent, Entity Framework, Exposed (13 ORMs) |
 | **Components** | React, Vue, Svelte, Flutter widgets (StatelessWidget, StatefulWidget, ConsumerWidget), SwiftUI views (auto-filters shadcn/ui and Radix primitives) |
 | **Libraries** | TypeScript, JavaScript, Python, Go, Dart, Swift, C#, PHP (exports with function signatures) |
@@ -563,7 +563,7 @@ startup_timeout_sec = 60
 | `codesight_get_blast_radius` | Impact analysis before changing a file |
 | `codesight_get_env` | Environment variables (filter: required only) |
 | `codesight_get_hot_files` | Most imported files with configurable limit |
-| `codesight_get_events` | Background events: BullMQ queues, Kafka topics, Redis pub/sub, EventEmitter |
+| `codesight_get_events` | Background events: BullMQ queues, Celery tasks, Kafka topics, Redis pub/sub, EventEmitter |
 | `codesight_get_coverage` | Test coverage map: which routes and models have test files |
 | `codesight_refresh` | Force re-scan (results are cached per session) |
 
