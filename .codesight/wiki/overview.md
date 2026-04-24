@@ -38,4 +38,4 @@ Changes to these files have the widest blast radius across the codebase:
 - `VITE_VAR_NAME` — `src/detectors/config.ts`
 
 ---
-_Back to [index.md](./index.md) · Generated 2026-04-21_
+_Back to [index.md](./index.md) · Generated 2026-04-24_
